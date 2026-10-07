@@ -1,0 +1,15 @@
+services:
+  db:
+    build: !reset null
+    image: ${POSTROOM_IMAGE:-ghcr.io/team-switch-reclamebureau/newsletter-tool}-db:${POSTROOM_VERSION:-latest}
+    pull_policy: always
+
+  migrate:
+    build: !reset null
+    image: ${POSTROOM_IMAGE:-ghcr.io/team-switch-reclamebureau/newsletter-tool}-tools:${POSTROOM_VERSION:-latest}
+    pull_policy: always
+
+  app:
+    build: !reset null
+    image: ${POSTROOM_IMAGE:-ghcr.io/team-switch-reclamebureau/newsletter-tool}:${POSTROOM_VERSION:-latest}
+    pull_policy: always

@@ -155,6 +155,73 @@ application migrations are versioned and repeatable. Do not remove the named
 volumes when updating. The local storage adapter is isolated so another storage
 backend can be added later without changing newsletter item editing.
 
+### Published release images on GitHub Container Registry
+
+Publishing a GitHub release runs the **Publish release images** workflow. It
+builds the released tag, not the current `main` branch, and publishes three
+images for both Linux amd64 and arm64:
+
+| Image | Purpose |
+| --- | --- |
+| `ghcr.io/team-switch-reclamebureau/newsletter-tool` | Application |
+| `ghcr.io/team-switch-reclamebureau/newsletter-tool-tools` | Migrations and user provisioning |
+| `ghcr.io/team-switch-reclamebureau/newsletter-tool-db` | PostgreSQL with the application-role initialization script |
+
+Each image receives the release tag, for example `:v1.2.3`. After all three
+images have been published successfully, the workflow also updates `:latest`
+if this is GitHub's latest stable release. Prereleases get their version tag
+without changing `:latest`. Wait for the workflow to finish successfully before
+updating the VPS. A failed publication can be retried using **Re-run failed jobs**
+in GitHub Actions.
+
+Commit and push the workflow before creating the first release. The workflow
+uses GitHub's built-in `GITHUB_TOKEN`; no registry password or VPS secrets need
+to be added to the repository. GitHub Actions must be enabled and organization
+policies must allow package publishing and the referenced actions.
+
+#### Deploy or update the VPS without building from source
+
+Use Docker Compose 2.24.4 or newer. Keep `compose.yaml`, `compose.registry.yaml`,
+`Caddyfile`, and your private `.env` in the same deployment directory. The
+registry override removes local builds but preserves the original service
+configuration, migration dependencies, and persistent volumes.
+
+GHCR packages are private by default. For private images, sign in on the VPS:
+
+```sh
+docker login ghcr.io -u YOUR_GITHUB_USERNAME
+```
+
+At the password prompt, enter a GitHub personal access token (classic) with
+`read:packages` and access to this organization's packages. Authorize it for
+organization SSO if required. Alternatively, make **all three** packages public
+in their GitHub package settings to allow unauthenticated pulls.
+
+After configuring the existing deployment environment variables, run:
+
+```sh
+docker compose -f compose.yaml -f compose.registry.yaml pull
+docker compose -f compose.yaml -f compose.registry.yaml up -d --no-build
+docker compose -f compose.yaml -f compose.registry.yaml ps
+```
+
+The default is `:latest`. To pin a specific release, set
+`POSTROOM_VERSION=v1.2.3` in `.env`; the same version is used for the app,
+migrations, and database. `POSTROOM_IMAGE` can override the image prefix for a
+fork. Always use both Compose files for registry-based deployment, including
+backups and provisioning:
+
+```sh
+docker compose -f compose.yaml -f compose.registry.yaml run --rm -it migrate npm run user:create -- person@example.com "Person Name" --admin
+```
+
+Back up the database and uploads before upgrades. Keep the same deployment
+directory/Compose project name to reuse existing volumes, and never run
+`down -v` during an update. PostgreSQL stays on major version 18; application
+migrations run before the app starts. Do not downgrade after a database
+migration without a compatible backup. The original `docker compose up --build -d`
+workflow remains available for local source builds.
+
 ## Development
 
 Use Node.js 24+, and PostgreSQL 18 (an existing server or the Compose database).
