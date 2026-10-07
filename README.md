@@ -433,12 +433,4 @@ UTM tracking, and legacy read-only export compatibility.
 
 ## Roadmap
 
-- [x] Newsletter content is saved in a separate projects folder (ready to track via Git)
-  - [x] User can choose this projects folder
-  - [x] Projects folder contains one or more folders for each project
-  - [x] Project folder contains a template.mjml, optional item.mjml and a folder of newsletter editions
-  - [ ] Text content of those editions is saved in .md files and loaded dynamically
-- [x] User can edit project templates and item snippets in the hosted workspace (local files remain read-only)
-- [x] User can preview the assembled .mjml and .html
-- [ ] User can change/update UTM tags
-- [ ] User can test for broken links
+- [ ] Creating a release makes the new version available for download and deployment via ghcr.io
