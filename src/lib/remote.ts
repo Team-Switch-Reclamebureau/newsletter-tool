@@ -19,6 +19,13 @@ export interface RemoteProject {
 	role: 'owner' | 'editor';
 }
 
+export interface ProjectMember {
+	id: string;
+	name: string;
+	email: string;
+	role: RemoteProject['role'];
+}
+
 export type ImageScope = 'project' | 'edition';
 
 export interface ImageAsset {

@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { mkdir, rename, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cloneNewsletter, composeNewsletter, createNewsletter, createItem, type Newsletter } from '../../src/lib/newsletters';
-import { DEFAULT_TEMPLATE, MAX_IMAGE_BYTES, type ImageAsset, type RemoteProject } from '../../src/lib/remote';
+import { DEFAULT_TEMPLATE, MAX_IMAGE_BYTES, type ImageAsset, type ProjectMember, type RemoteProject } from '../../src/lib/remote';
 import { DEFAULT_APPLICATION_SETTINGS, type ApplicationSettings } from '../../src/lib/application-settings';
 import { EMPTY_UTM } from '../../src/lib/utm';
 import { startHostedFixture } from '../helpers/hosted-fixture';
@@ -313,6 +313,40 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect((await request(`/api/projects/${project.id}/members`, 'POST', { email: 'owner@example.test' }, memberCookie)).status).toBe(200);
 		const ownerProjects = (await (await request('/api/projects')).json()).projects as RemoteProject[];
 		expect(ownerProjects.find((entry) => entry.id === project.id)?.role).toBe('owner');
+	});
+
+	it('lists only project members for owners and editors and refreshes the list when sharing', async () => {
+		const created = await request('/api/projects', 'POST', { name: 'Access list' });
+		expect(created.status).toBe(201);
+		const accessProject = (await created.json()).project as RemoteProject;
+		const path = `/api/projects/${accessProject.id}/members`;
+		expect((await request(path, 'GET', undefined, '')).status).toBe(401);
+		expect((await request(path, 'GET', undefined, memberCookie)).status).toBe(404);
+		expect((await request(path, 'GET', undefined, outsiderCookie)).status).toBe(404);
+		expect((await request(`/api/projects/${outsiderProject.id}/members`)).status).toBe(404);
+		const initial = await request(path);
+		expect(initial.status).toBe(200);
+		const owner = { id: expect.any(String), name: 'owner', email: 'owner@example.test', role: 'owner' };
+		expect((await initial.json()).members).toEqual([owner]);
+		const shared = await request(path, 'POST', { email: 'member@example.test' });
+		expect(shared.status).toBe(200);
+		const expected = [owner, { id: expect.any(String), name: 'member', email: 'member@example.test', role: 'editor' }];
+		const members = (await shared.json()).members as ProjectMember[];
+		expect(members).toEqual(expected);
+		expect(new Set(members.map((member) => member.id)).size).toBe(2);
+		for (const cookie of [ownerCookie, memberCookie]) {
+			const response = await request(path, 'GET', undefined, cookie);
+			expect(response.status).toBe(200);
+			expect((await response.json()).members).toEqual(expected);
+		}
+		const duplicate = await request(path, 'POST', { email: 'owner@example.test' }, memberCookie);
+		expect(duplicate.status).toBe(200);
+		expect((await duplicate.json()).members).toEqual(expected);
+		const extended = await request(path, 'POST', { email: 'outsider@example.test' }, memberCookie);
+		expect(extended.status).toBe(200);
+		const allMembers = [...expected, { id: expect.any(String), name: 'outsider', email: 'outsider@example.test', role: 'editor' }];
+		expect((await extended.json()).members).toEqual(allMembers);
+		expect((await (await request(path, 'GET', undefined, outsiderCookie)).json()).members).toEqual(allMembers);
 	});
 
 	it('lets editors share projects and newly added editors share them again, but blocks non-members', async () => {

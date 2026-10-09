@@ -8,7 +8,7 @@
 	import { cloneNewsletter, composeNewsletter, createItem, createNewsletter, parseNewsletter, serializeNewsletter, type Newsletter } from '#lib/newsletters.js';
 	import { readSource } from '#lib/files.js';
 	import { uploadImages, type ImageUploadResult } from '#lib/image-uploads.js';
-	import { MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ImageScope, type RemoteProject } from '#lib/remote.js';
+	import { MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ImageScope, type ProjectMember, type RemoteProject } from '#lib/remote.js';
 	import { EMPTY_UTM, UTM_KEYS } from '#lib/utm.js';
 
 	interface Draft {
@@ -30,6 +30,10 @@
 		drafts: Draft[];
 		activeId: string | null;
 		assets: ImageAsset[];
+		members: ProjectMember[] | null;
+		membersLoading: boolean;
+		membersError: string;
+		addingMember: boolean;
 		templateSaving: boolean;
 		uploading: boolean;
 		libraryUploadTotal: number;
@@ -56,7 +60,6 @@
 	let editionName = $state('');
 	let cloneSourceId = $state<string | null>(null);
 	let memberEmail = $state('');
-	let addingMember = $state(false);
 	let leaving = false;
 	let selectionVersion = 0;
 	const context = $derived(contexts[projectId]);
@@ -134,6 +137,7 @@
 				})),
 				activeId: null,
 				assets: images.assets,
+				members: null, membersLoading: false, membersError: '', addingMember: false,
 				templateSaving: false, uploading: false, libraryUploadTotal: 0, libraryUploads: [],
 				libraryUploadDestination: '',
 				deletingAssetId: null, deletingEditionId: null,
@@ -433,20 +437,40 @@
 		finally { current.deletingAssetId = null; }
 	}
 
+	async function loadMembers() {
+		const current = context;
+		if (!current || current.membersLoading || current.addingMember) return;
+		current.membersLoading = true;
+		current.membersError = '';
+		try {
+			const result = await requestJson<{ members: ProjectMember[] }>(`/api/projects/${current.project.id}/members`);
+			current.members = result.members;
+		} catch (cause) { current.membersError = message(cause); }
+		finally { current.membersLoading = false; }
+	}
+
+	function openSharing() {
+		mode = 'sharing';
+		void loadMembers();
+	}
+
 	async function addMember(event: SubmitEvent) {
 		event.preventDefault();
 		const current = context;
-		if (!current || addingMember) return;
+		if (!current || current.addingMember || current.membersLoading) return;
 		const email = memberEmail;
-		addingMember = true;
+		current.addingMember = true;
 		apiError = '';
 		current.message = '';
+		current.membersError = '';
 		try {
-			const result = await requestJson<{ message: string }>(`/api/projects/${current.project.id}/members`, jsonRequest('POST', { email }));
+			const result = await requestJson<{ members: ProjectMember[]; message: string }>(`/api/projects/${current.project.id}/members`, jsonRequest('POST', { email }));
+			current.members = result.members;
+			current.membersError = '';
 			current.message = result.message;
 			if (context === current && memberEmail === email) memberEmail = '';
-		} catch (cause) { apiError = message(cause); }
-		finally { addingMember = false; }
+		} catch (cause) { current.membersError = message(cause); }
+		finally { current.addingMember = false; }
 	}
 
 	async function copyPermalink(id: string) {
@@ -555,7 +579,7 @@
 						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}>Editions ({context.drafts.length})</button>
 						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}>Templates</button>
 						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}>Project images ({context.assets.length})</button>
-						<button class:active={mode === 'sharing'} onclick={() => mode = 'sharing'}>Sharing</button>
+						<button class:active={mode === 'sharing'} onclick={openSharing}>Sharing</button>
 					{/if}
 				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView}<button class="primary" onclick={() => beginEdition()}>+ New newsletter</button>{/if}</div></div>
 				{#if mode === 'editions'}
@@ -563,11 +587,23 @@
 				{:else if mode === 'sharing'}
 					<section class="panel" aria-labelledby="sharing-heading">
 						<div class="panel-toolbar"><h2 id="sharing-heading">Share this project</h2></div>
+						<div class="member-list">
+							<div class="save-actions"><h3 id="members-heading">People with access{context.members ? ` (${context.members.length})` : ''}</h3><button class="secondary" disabled={context.membersLoading || context.addingMember} onclick={loadMembers}>Refresh members</button></div>
+							{#if context.membersLoading}<p role="status">Loading members…</p>{/if}
+							{#if context.membersError}<p class="error notice" role="alert">{context.membersError}</p>{/if}
+							{#if context.members}
+								<ul aria-labelledby="members-heading">
+									{#each context.members as member (member.id)}
+										<li><div><strong>{member.name}{member.id === data.user?.id ? ' (you)' : ''}</strong><span>{member.email}</span></div><span class="member-role">{member.role === 'owner' ? 'Owner' : 'Editor'}</span></li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
 						<form class="member-form" onsubmit={addMember}>
 							<p>Anyone with access to this project can share it with others. Add an existing user by email to grant editor access to all newsletters, templates, and images in this project. Editors can also share the project.</p>
 							<p>The recipient needs an account first. Ask an administrator to invite them if they do not have one.</p>
 							<label for="member-email">Member email</label><input id="member-email" type="email" bind:value={memberEmail} required />
-							<button class="secondary" disabled={addingMember || !memberEmail.trim()}>{addingMember ? 'Adding…' : 'Add member'}</button>
+							<button class="secondary" disabled={context.addingMember || context.membersLoading || !memberEmail.trim()}>{context.addingMember ? 'Adding…' : 'Add member'}</button>
 						</form>
 					</section>
 				{:else if mode === 'edition-settings' && draft}
@@ -691,6 +727,14 @@
 	.template-form .save-actions { margin-top: 22px; }
 	.member-form { max-width: 640px; }
 	.member-form button { margin-top: 14px; }
+	.member-list { padding: 20px; }
+	.member-list h3 { margin: 0; font-size: 12px; }
+	.member-list ul { list-style: none; margin: 16px 0 0; padding: 0; }
+	.member-list li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--ui-border, #e1e8d8); overflow-wrap: anywhere; }
+	.member-list li > div { min-width: 0; }
+	.member-list strong, .member-list span { display: block; font-size: 12px; }
+	.member-list span { color: var(--ui-muted, #78886b); line-height: 1.8; }
+	.member-role { flex-shrink: 0; }
 	.notice { padding: 12px 15px; border-radius: 5px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 	.error { background: #fff0e8; color: #9b4335; }
 	.success { background: var(--ui-soft, #edf4e3); color: var(--ui-text, #648249); }

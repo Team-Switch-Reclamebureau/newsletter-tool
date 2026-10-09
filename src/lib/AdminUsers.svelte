@@ -43,7 +43,7 @@
 	}
 </script>
 
-<p>Invite users to choose their own password. Project access is granted separately from each project's Templates view.</p>
+<p>Invite users to choose their own password. Project access is granted separately from each project's Sharing tab.</p>
 <form onsubmit={invite}>
 	<fieldset disabled={busy}>
 		<label for="invite-name">Name</label><input id="invite-name" bind:value={name} maxlength="80" required />

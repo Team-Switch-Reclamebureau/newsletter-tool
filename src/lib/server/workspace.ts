@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { Pool, PoolClient } from 'pg';
 import { parseNewsletter, templateValuesError, validHttpUrl, type Newsletter } from '../newsletters';
 import { templateFields } from '../template-fields';
-import { DEFAULT_TEMPLATE, MAX_TEMPLATE_BYTES, UUID_PATTERN, imageAssetUrl, type ImageAsset, type RemoteProject } from '../remote';
+import { DEFAULT_TEMPLATE, MAX_TEMPLATE_BYTES, UUID_PATTERN, imageAssetUrl, type ImageAsset, type ProjectMember, type RemoteProject } from '../remote';
 import { validateSource } from './render';
 
 type Database = Pool | PoolClient;
@@ -36,6 +36,15 @@ export async function requireProject(database: Database, projectId: string, user
 		WHERE p.id = $1 AND m.user_id = $2 ${lock ? 'FOR UPDATE OF p' : ''}`, [projectId, userId]);
 	if (!result.rows[0]) error(404, 'Project not found or access was not granted.');
 	return projectFromRow(result.rows[0]);
+}
+
+export async function listProjectMembers(database: Database, projectId: string): Promise<ProjectMember[]> {
+	const result = await database.query<ProjectMember>(`
+		SELECT u.id, u.name, u.email, m.role
+		FROM project_members m JOIN "user" u ON u.id = m.user_id
+		WHERE m.project_id = $1
+		ORDER BY CASE WHEN m.role = 'owner' THEN 0 ELSE 1 END, lower(u.name), lower(u.email), u.id`, [projectId]);
+	return result.rows;
 }
 
 export function projectInput(value: Record<string, unknown>) {

@@ -8,6 +8,9 @@ newsletter editions, a reusable image library, and live HTML export permalinks.
 Any project member can share a project with other provisioned accounts as editors
 from the project's **Sharing** tab. Access covers all editions, templates, and
 images in the project; newly added editors can also share it with others.
+The Sharing tab lists everyone with access by name, email, and project role,
+including the owner. The list updates after adding a member; use **Refresh members**
+to check for access granted by others.
 The server checks project membership for every project operation. Public
 registration is blocked; administrators invite users from Admin settings or
 create accounts with the provisioning script.
