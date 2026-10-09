@@ -310,7 +310,30 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect(shared.status).toBe(200);
 		const list = await request('/api/projects', 'GET', undefined, memberCookie);
 		expect((await list.json()).projects[0].role).toBe('editor');
-		expect((await request(`/api/projects/${project.id}/members`, 'POST', { email: 'outsider@example.test' }, memberCookie)).status).toBe(403);
+		expect((await request(`/api/projects/${project.id}/members`, 'POST', { email: 'owner@example.test' }, memberCookie)).status).toBe(200);
+		const ownerProjects = (await (await request('/api/projects')).json()).projects as RemoteProject[];
+		expect(ownerProjects.find((entry) => entry.id === project.id)?.role).toBe('owner');
+	});
+
+	it('lets editors share projects and newly added editors share them again, but blocks non-members', async () => {
+		const created = await request('/api/projects', 'POST', { name: 'Member sharing' });
+		expect(created.status).toBe(201);
+		const sharingProject = (await created.json()).project as RemoteProject;
+		const path = `/api/projects/${sharingProject.id}/members`;
+		const body = { email: 'outsider@example.test' };
+		expect((await request(path, 'POST', body, '')).status).toBe(401);
+		expect((await request(path, 'POST', body, memberCookie)).status).toBe(404);
+		expect((await request(path, 'POST', { email: 'member@example.test' })).status).toBe(200);
+		expect((await request(path, 'POST', body, memberCookie, 'https://untrusted.example')).status).toBe(403);
+		expect((await request(path, 'POST', { email: 42 }, memberCookie)).status).toBe(400);
+		expect((await request(path, 'POST', { email: 'not-provisioned@example.test' }, memberCookie)).status).toBe(404);
+		expect((await request(path, 'POST', { email: '  OUTSIDER@example.test  ' }, memberCookie)).status).toBe(200);
+		expect((await request(path, 'POST', body, memberCookie)).status).toBe(200);
+		const outsiderProjects = (await (await request('/api/projects', 'GET', undefined, outsiderCookie)).json()).projects as RemoteProject[];
+		expect(outsiderProjects.filter((entry) => entry.id === sharingProject.id)).toEqual([{ ...sharingProject, role: 'editor' }]);
+		expect((await request(`/api/projects/${sharingProject.id}/newsletters`, 'GET', undefined, outsiderCookie)).status).toBe(200);
+		expect((await request(path, 'POST', { email: 'member@example.test' }, outsiderCookie)).status).toBe(200);
+		expect((await request(`/api/projects/${outsiderProject.id}/members`, 'POST', { email: 'member@example.test' })).status).toBe(404);
 	});
 
 	it('saves templates with optimistic concurrency protection', async () => {

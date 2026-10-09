@@ -9,8 +9,7 @@ export const POST = api(async (event) => {
 	if (typeof body.email !== 'string') error(400, 'Enter the email address of a provisioned user.');
 	const email = body.email.trim().toLowerCase();
 	await transaction(pool, async (client) => {
-		const project = await requireProject(client, projectId, user.id, true);
-		if (project.role !== 'owner') error(403, 'Only the project owner can add members.');
+		await requireProject(client, projectId, user.id, true);
 		const account = await client.query<{ id: string }>('SELECT id FROM "user" WHERE lower(email) = $1', [email]);
 		if (!account.rows[0]) error(404, 'This user has not been provisioned. Ask your administrator to create their account first.');
 		await client.query("INSERT INTO project_members(project_id, user_id, role) VALUES ($1, $2, 'editor') ON CONFLICT DO NOTHING", [projectId, account.rows[0].id]);

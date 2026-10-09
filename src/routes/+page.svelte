@@ -39,7 +39,7 @@
 		deletingEditionId: string | null;
 		message: string;
 	}
-	type Mode = 'editions' | 'templates' | 'project-images'
+	type Mode = 'editions' | 'templates' | 'project-images' | 'sharing'
 		| 'content' | 'edition-settings' | 'edition-images';
 
 	let { data }: { data: PageData } = $props();
@@ -435,13 +435,16 @@
 
 	async function addMember(event: SubmitEvent) {
 		event.preventDefault();
-		if (!context) return;
+		const current = context;
+		if (!current || addingMember) return;
+		const email = memberEmail;
 		addingMember = true;
 		apiError = '';
+		current.message = '';
 		try {
-			const result = await requestJson<{ message: string }>(`/api/projects/${context.project.id}/members`, jsonRequest('POST', { email: memberEmail }));
-			context.message = result.message;
-			memberEmail = '';
+			const result = await requestJson<{ message: string }>(`/api/projects/${current.project.id}/members`, jsonRequest('POST', { email }));
+			current.message = result.message;
+			if (context === current && memberEmail === email) memberEmail = '';
 		} catch (cause) { apiError = message(cause); }
 		finally { addingMember = false; }
 	}
@@ -552,10 +555,21 @@
 						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}>Editions ({context.drafts.length})</button>
 						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}>Templates</button>
 						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}>Project images ({context.assets.length})</button>
+						<button class:active={mode === 'sharing'} onclick={() => mode = 'sharing'}>Sharing</button>
 					{/if}
 				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView}<button class="primary" onclick={() => beginEdition()}>+ New newsletter</button>{/if}</div></div>
 				{#if mode === 'editions'}
 					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} onCopyLink={copyPermalink} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
+				{:else if mode === 'sharing'}
+					<section class="panel" aria-labelledby="sharing-heading">
+						<div class="panel-toolbar"><h2 id="sharing-heading">Share this project</h2></div>
+						<form class="member-form" onsubmit={addMember}>
+							<p>Anyone with access to this project can share it with others. Add an existing user by email to grant editor access to all newsletters, templates, and images in this project. Editors can also share the project.</p>
+							<p>The recipient needs an account first. Ask an administrator to invite them if they do not have one.</p>
+							<label for="member-email">Member email</label><input id="member-email" type="email" bind:value={memberEmail} required />
+							<button class="secondary" disabled={addingMember || !memberEmail.trim()}>{addingMember ? 'Adding…' : 'Add member'}</button>
+						</form>
+					</section>
 				{:else if mode === 'edition-settings' && draft}
 					<section class="panel library"><h2>Edition settings</h2>
 						<form class="utm-form" onsubmit={(event) => { event.preventDefault(); void saveEdition(); }}>
@@ -601,7 +615,6 @@
 									<label for="snippet-import">Import item.mjml</label><input id="snippet-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'snippet')} />
 									<div class="save-actions"><span>{templateDirty ? 'Unsaved project changes' : 'Project saved'}</span><button class="primary" disabled={context.templateSaving}>{context.templateSaving ? 'Saving…' : 'Save templates'}</button></div>
 								</form>
-								{#if context.project.role === 'owner'}<form class="member-form" onsubmit={addMember}><h3>Share this project</h3><p>Administrators provision accounts first. Add an existing user by email to grant editor access.</p><label for="member-email">Member email</label><input id="member-email" type="email" bind:value={memberEmail} required /><button class="secondary" disabled={addingMember}>{addingMember ? 'Adding…' : 'Add member'}</button></form>{/if}
 							{/if}
 						</section>
 						<NewsletterPreview source={composition.source} error={composition.error ?? ''} name={(editionView ? draft?.newsletter.name : selected?.name) || 'Template'} utm={editionView ? draft?.newsletter.utm ?? EMPTY_UTM : EMPTY_UTM} />
@@ -676,7 +689,7 @@
 	.template-form textarea { resize: vertical; font-family: monospace; line-height: 1.7; }
 	.template-form p, .member-form p { font-size: 10px; }
 	.template-form .save-actions { margin-top: 22px; }
-	.member-form { border-top: 1px solid var(--ui-border, #e1e8d8); }
+	.member-form { max-width: 640px; }
 	.member-form button { margin-top: 14px; }
 	.notice { padding: 12px 15px; border-radius: 5px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 	.error { background: #fff0e8; color: #9b4335; }

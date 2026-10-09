@@ -5,7 +5,9 @@ and persistent image storage. No managed-service subscription is required.
 
 Users sign in to private projects. Each project has editable MJML templates,
 newsletter editions, a reusable image library, and live HTML export permalinks.
-Project owners can share a project with other provisioned accounts as editors.
+Any project member can share a project with other provisioned accounts as editors
+from the project's **Sharing** tab. Access covers all editions, templates, and
+images in the project; newly added editors can also share it with others.
 The server checks project membership for every project operation. Public
 registration is blocked; administrators invite users from Admin settings or
 create accounts with the provisioning script.
@@ -118,7 +120,7 @@ The provisioning command prompts for a password without exposing it in command
 arguments. Passwords must contain at least 12 characters. Provision additional
 users the same way, or provision an administrator with `--admin`, configure SMTP
 in **Admin settings**, and invite users there. Add their email addresses from a
-project's Templates view to grant project access. Public self-service registration
+project's **Sharing** tab to grant project access. Public self-service registration
 remains blocked.
 
 Compose runs migrations before starting the app. Caddy terminates HTTPS, serves
