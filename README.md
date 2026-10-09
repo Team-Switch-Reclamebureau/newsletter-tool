@@ -206,6 +206,49 @@ application migrations are versioned and repeatable. Do not remove the named
 volumes when updating. The local storage adapter is isolated so another storage
 backend can be added later without changing newsletter item editing.
 
+#### VPS update script
+
+For the source-built host-proxy deployment above, run from the repository:
+
+```sh
+bash scripts/update-vps.sh
+```
+
+The default updates to `origin/main`. To install a specific release instead:
+
+```sh
+bash scripts/update-vps.sh v1.2.3
+```
+
+Replace the example tag with the actual release tag. The script refuses dirty
+working trees, downgrades, and divergent updates. Release tags must include
+`compose.vps.yaml`. It runs Git as your current user and uses sudo only for
+Docker when necessary; do not run the entire script with sudo.
+
+The script uses `.env`, project name `postroom`, and the base plus VPS Compose
+files. It does not support registry-image deployments. Override the environment
+filename or backup location when needed:
+
+```sh
+POSTROOM_ENV_FILE=.env.vps POSTROOM_BACKUP_DIR="$HOME/backups/postroom" bash scripts/update-vps.sh
+```
+
+Backups must be outside the repository. The script stops the app to back up the
+database and images consistently, records the previous commit, and saves the
+deployment environment and Compose files in a private timestamped directory.
+It checks that both archives can be listed, but this is not a restoration test.
+The app remains unavailable during backups, rebuilding, and migrations.
+Other applications and the host proxy are not changed.
+
+Successful updates require a healthy app and a passing internal `/healthz`
+request. Verify your public HTTPS URL separately afterward. Backups are retained
+without automatic deletion; copy them off the VPS and protect `deployment.env`,
+which contains secrets. On failure the script exits without an automatic
+rollback, and the app may remain stopped. Inspect the error and migration logs
+before restarting or restoring. An interrupted update can leave a
+`.update-lock` directory in the backup root; remove it only after confirming no
+update is running.
+
 ### Published release images on GitHub Container Registry
 
 Publishing a GitHub release runs the **Publish release images** workflow. It
