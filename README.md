@@ -139,6 +139,57 @@ hostname stable after sending emails. `/healthz` verifies database connectivity.
 Sign-in attempts are limited to five per minute; uploads are limited to thirty
 per user per minute and rendering to 240 per user per minute.
 
+### VPS with an existing host-level reverse proxy
+
+Use Docker Compose 2.24.4 or newer. If Caddy or Nginx already runs directly on
+the VPS, use [compose.vps.yaml](./compose.vps.yaml) alongside the base Compose
+file. This override keeps PostgreSQL internal, publishes the app only on
+`127.0.0.1:3002`, and puts bundled Caddy behind the `bundled-proxy` profile so it
+does not start by default. Check that host port 3002 is free before starting.
+No changes to other applications' Docker networks are needed.
+
+Keep deployment secrets in an untracked `.env.vps` file, configured with the
+same variables shown above. Start and provision the application with:
+
+```sh
+docker compose --env-file .env.vps -p postroom -f compose.yaml -f compose.vps.yaml config --quiet
+docker compose --env-file .env.vps -p postroom -f compose.yaml -f compose.vps.yaml up -d --build db migrate app
+curl --fail --show-error http://127.0.0.1:3002/healthz
+docker compose --env-file .env.vps -p postroom -f compose.yaml -f compose.vps.yaml run --rm -it migrate npm run user:create -- person@example.com "Person Name" --admin
+```
+
+If using `.env` instead, omit `--env-file .env.vps`. Keep the same project name,
+environment file, and Compose files for status, logs, backups, and updates.
+For published images, add `-f compose.registry.yaml` before
+`-f compose.vps.yaml` and use the registry pull/no-build workflow below.
+Do not enable the `bundled-proxy` profile on a host where ports 80/443 are
+already in use.
+
+For host-level Caddy, add a separate site block to its existing configuration,
+preserving all other sites:
+
+```caddyfile
+newsletters.your-domain.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3002
+}
+```
+
+Point the domain at the VPS and match it to `APP_DOMAIN` and `APP_ORIGIN`.
+Validate the host's Caddy configuration before reloading it:
+
+```sh
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+curl --fail --show-error https://newsletters.your-domain.com/healthz
+```
+
+Only reload after validation succeeds. Caddy manages HTTPS certificates.
+For host-level Nginx, configure the HTTPS virtual host to proxy to
+`http://127.0.0.1:3002`, preserve the original Host header, and allow request
+bodies up to 13 MB. The app serves public images itself, so the existing proxy
+does not need access to the uploads volume.
+
 ### Backups and updates
 
 Back up **both** PostgreSQL and the uploads volume. Database backups alone cannot

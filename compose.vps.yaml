@@ -1,0 +1,11 @@
+services:
+  db:
+    ports: !reset []
+
+  app:
+    ports:
+      - "127.0.0.1:3002:3000"
+
+  caddy:
+    profiles:
+      - bundled-proxy
