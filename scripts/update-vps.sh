@@ -72,13 +72,19 @@ main() {
   echo "Stopping the app for consistent database/image backups. Other services are unaffected."
   echo "Backups: $backup"
   "${compose[@]}" stop app
-  "${compose[@]}" exec -T db pg_dump -U postroom_owner -d postroom -Fc > "$backup/database.dump"
-  "${compose[@]}" run --rm -T --no-deps --entrypoint sh app \
-    -c 'tar -C /data/uploads -czf - .' > "$backup/images.tgz"
+  echo "Backing up PostgreSQL..."
+  "${compose[@]}" exec -T --interactive=false db \
+    pg_dump --no-password --lock-wait-timeout=30s -U postroom_owner -d postroom -Fc \
+    </dev/null > "$backup/database.dump"
+  echo "Backing up uploaded images..."
+  "${compose[@]}" run --rm -T --interactive=false --no-deps --entrypoint sh app \
+    -c 'tar -C /data/uploads -czf - .' </dev/null > "$backup/images.tgz"
   [[ -s "$backup/database.dump" && -s "$backup/images.tgz" ]]
+  echo "Checking backup archives..."
   "${compose[@]}" exec -T db pg_restore --list < "$backup/database.dump" >/dev/null
   tar -tzf "$backup/images.tgz" >/dev/null
 
+  echo "Updating source code..."
   if [[ $# -eq 1 ]]; then
     git switch --detach "$target"
   else
@@ -86,14 +92,16 @@ main() {
     git merge --ff-only "$target"
   fi
   "${compose[@]}" config --quiet
+  echo "Building and deploying..."
   "${compose[@]}" up -d --build db migrate app
+  echo "Waiting for app health..."
   app_id="$("${compose[@]}" ps -q app)"
   [[ -n "$app_id" ]]
   for ((attempt = 0; attempt < 60; attempt++)); do
     state="$("${docker_command[@]}" inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$app_id")"
     case "$state" in
       "running healthy")
-        "${compose[@]}" exec -T app node -e \
+        "${compose[@]}" exec -T --interactive=false app node -e \
           "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(e=>{console.error(e);process.exit(1)})"
         echo "Update complete: $(git rev-parse --short HEAD)"
         echo "Backups retained at $backup. Copy them off the VPS; deployment.env contains secrets."

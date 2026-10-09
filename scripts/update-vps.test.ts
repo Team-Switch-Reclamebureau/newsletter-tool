@@ -73,6 +73,11 @@ describe('VPS updater', () => {
 		expect(result.status, result.stderr).toBe(0);
 		expect(commands.indexOf('stop app')).toBeLessThan(commands.indexOf('pg_dump'));
 		expect(commands.indexOf('pg_dump')).toBeLessThan(commands.indexOf('git switch main'));
+		expect(commands).toContain('exec -T --interactive=false db pg_dump --no-password --lock-wait-timeout=30s');
+		expect(commands).toContain('run --rm -T --interactive=false --no-deps --entrypoint sh app');
+		expect(result.stdout).toContain('Backing up PostgreSQL...');
+		expect(result.stdout).toContain('Backing up uploaded images...');
+		expect(result.stdout).toContain('Checking backup archives...');
 		expect(commands).toContain('git merge --ff-only refs/remotes/origin/main');
 		expect(commands).toContain('up -d --build db migrate app');
 		expect(commands).toContain("fetch('http://127.0.0.1:3000/healthz')");

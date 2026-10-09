@@ -237,6 +237,9 @@ Backups must be outside the repository. The script stops the app to back up the
 database and images consistently, records the previous commit, and saves the
 deployment environment and Compose files in a private timestamped directory.
 It checks that both archives can be listed, but this is not a restoration test.
+Backup exports run without interactive stdin or password prompts. PostgreSQL
+exports fail explicitly if a table lock cannot be acquired within 30 seconds.
+Progress messages identify each backup and deployment stage.
 The app remains unavailable during backups, rebuilding, and migrations.
 Other applications and the host proxy are not changed.
 
