@@ -506,6 +506,7 @@
 			<nav aria-label="Newsletter projects">{#each projects as project (project.id)}<button class:chosen={projectId === project.id} onclick={() => selectProject(project.id)}>▤ <span>{project.name}</span></button>{/each}</nav>
 			<button class="secondary new-project" onclick={() => newProject = true}>+ New project</button>
 			<div class="sidebar-footer">
+				<a class="admin-settings" href="/account">Change password</a>
 				{#if data.isAdmin}<a class="admin-settings" href="/admin">Admin settings</a>{/if}
 				<small>Private projects · Public HTML and images</small>
 				<button class="secondary" onclick={logout}>Sign out</button>

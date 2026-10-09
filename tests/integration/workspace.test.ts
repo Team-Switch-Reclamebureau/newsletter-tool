@@ -213,7 +213,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		const privileges = await fixture.pool.query<{ can_grant_admin: boolean; can_delete_settings: boolean }>(
 			"SELECT has_table_privilege('postroom_app', 'application_admins', 'INSERT') AS can_grant_admin, has_table_privilege('postroom_app', 'application_settings', 'DELETE') AS can_delete_settings"
 		);
-		expect(privileges.rows[0]).toEqual({ can_grant_admin: false, can_delete_settings: false });
+		expect(privileges.rows[0]).toEqual({ can_grant_admin: true, can_delete_settings: false });
 		await fixture.pool.query('DELETE FROM application_admins WHERE user_id = (SELECT id FROM "user" WHERE email = $1)', ['owner@example.test']);
 		expect((await request(path)).status).toBe(403);
 		expect((await request(path, 'PATCH', { ...DEFAULT_APPLICATION_SETTINGS, revision: 2 })).status).toBe(403);

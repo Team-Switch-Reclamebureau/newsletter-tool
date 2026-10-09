@@ -18,6 +18,9 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"devDependencies": {
+		"@types/nodemailer": "^8.0.2",
+		"@types/smtp-server": "^3.5.0",
+		"smtp-server": "^3.19.18",
 		"@types/mjml": "^5.0.0",
 		"vitest": "^5.0.3",
 		"@sveltejs/adapter-node": "^5.5.7",
@@ -33,6 +36,7 @@
 		"vite": "^8.3.0"
 	},
 	"dependencies": {
+		"nodemailer": "^10.0.16",
 		"parse5": "^8.0.0",
 		"better-auth": "^1.7.7",
 		"pg": "^8.23.1",

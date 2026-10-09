@@ -39,6 +39,7 @@
 			{#if message}<p class="error" role="alert">{message}</p>{/if}
 			<button disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
 		</form>
+		<p><a href="/forgot-password">Forgot your password?</a></p>
 		<small>Invite-only workspace. Contact your administrator for an account.</small>
 	</section>
 </main>
@@ -60,4 +61,5 @@
 	button:disabled { opacity: .6; cursor: wait; }
 	small { display: block; font-size: 10px; color: var(--ui-muted, #849276); line-height: 1.8; margin-top: 24px; }
 	.error { color: #9b4335; }
+	a { color: var(--ui-text, #526348); }
 </style>

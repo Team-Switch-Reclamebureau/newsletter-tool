@@ -7,7 +7,8 @@ Users sign in to private projects. Each project has editable MJML templates,
 newsletter editions, a reusable image library, and live HTML export permalinks.
 Project owners can share a project with other provisioned accounts as editors.
 The server checks project membership for every project operation. Public
-registration is blocked; only the administrator provisioning script creates accounts.
+registration is blocked; administrators invite users from Admin settings or
+create accounts with the provisioning script.
 
 Images are intentionally public so email recipients can view them without
 signing in. Project management, templates, and newsletter editing are private.
@@ -115,9 +116,10 @@ docker compose run --rm -it migrate npm run user:create -- person@example.com "P
 
 The provisioning command prompts for a password without exposing it in command
 arguments. Passwords must contain at least 12 characters. Provision additional
-users the same way, then add their email addresses from a project's Templates
-view to grant access. Email invitations, self-service registration, and password
-reset workflows are not included in this milestone.
+users the same way, or provision an administrator with `--admin`, configure SMTP
+in **Admin settings**, and invite users there. Add their email addresses from a
+project's Templates view to grant project access. Public self-service registration
+remains blocked.
 
 Compose runs migrations before starting the app. Caddy terminates HTTPS, serves
 public images directly, and proxies the application. Only Caddy is exposed
@@ -354,7 +356,8 @@ npm run user:role -- person@example.com user
 
 For Compose, run these commands through the `migrate` service, for example
 `docker compose run --rm -it migrate npm run user:role -- person@example.com admin`.
-The application database role cannot grant administrator access.
+These commands remain available for initial setup and recovery. Administrators
+can also grant or revoke another user's administrator access in the UI.
 
 Administrators see **Admin settings** in the workspace sidebar. The branding
 section changes the application name, base color, and accent color for all accounts,
@@ -370,8 +373,41 @@ application logo, with automatically contrasting button text. Both colors
 appear in the live branding preview. Upgrading from the single-color setting
 initializes both colors to the previously saved interface color.
 
-User management and email settings are reserved future sections, not active
-features. Continue provisioning accounts with the CLI; HTML exports do not send emails.
+### Account email and user management
+
+In **Admin settings → Email settings**, save the SMTP hostname, port, security,
+optional username/password, and sender address/name. Use STARTTLS (usually 587)
+or implicit TLS (usually 465). TLS certificates are verified; unencrypted mode
+is only for a trusted internal relay. The app must be able to reach the SMTP
+server, and your provider must permit the chosen sender address.
+**Send test email to me** sends using the saved settings.
+
+SMTP passwords are encrypted in PostgreSQL using a key derived from
+`BETTER_AUTH_SECRET`; they are never returned to the browser. Blank password
+input preserves the current password; **Clear saved SMTP password** removes it.
+If you rotate the auth secret, re-enter and save the SMTP password.
+SMTP configuration edits use revision checks to prevent lost updates.
+
+**User management** lists users and their invitation status. Invite a user by
+name/email; they receive a one-hour link to choose their own password.
+Pending invitations can be resent. If delivery fails, the pending account
+remains in the list: refresh it, fix SMTP, then resend.
+Grant/revoke administrator access separately from project membership.
+Administrators cannot change their own role in the UI; another administrator
+or the recovery CLI must do that. Role changes apply on subsequent requests.
+
+Users can select **Forgot your password?** on the sign-in screen or **Change
+password** in the workspace sidebar. Passwords must contain 12–128 characters.
+Password recovery responses do not disclose whether an address has an account.
+Reset/invitation links expire after one hour, are single-use, and sign out all
+existing sessions when used. Completing a reset also invalidates other outstanding
+password links for that user. Password changes require the current password and
+sign out other sessions. Recovery requests and administrator email actions are
+rate-limited. SMTP/delivery failures are reported rather than treated as success.
+
+These are transactional account emails only: newsletter HTML exports still do
+not send campaigns. Migrations run automatically during the normal deployment
+update; no SMTP environment variables or update-script changes are required.
 
 ### Local testing with Docker PostgreSQL
 

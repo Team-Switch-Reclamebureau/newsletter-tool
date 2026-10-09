@@ -4,6 +4,8 @@
 	import { brandingError, DEFAULT_APPLICATION_SETTINGS, interfaceTheme, type ApplicationSettings } from '#lib/application-settings.js';
 	import type { PageData } from './$types';
 	import { untrack } from 'svelte';
+	import AdminEmailSettings from '#lib/AdminEmailSettings.svelte';
+	import AdminUsers from '#lib/AdminUsers.svelte';
 
 	let { data }: { data: PageData } = $props();
 	const initial = untrack(() => data.settings);
@@ -14,7 +16,9 @@
 	let saving = $state(false);
 	let message = $state('');
 	let failed = $state(false);
-	const dirty = $derived(applicationName !== saved.applicationName || baseColor !== saved.baseColor || accentColor !== saved.accentColor);
+	let emailDirty = $state(false);
+	const brandingDirty = $derived(applicationName !== saved.applicationName || baseColor !== saved.baseColor || accentColor !== saved.accentColor);
+	const dirty = $derived(brandingDirty || emailDirty);
 
 	beforeNavigate((navigation) => {
 		if (dirty && !window.confirm('Discard unsaved administrator settings?')) navigation.cancel();
@@ -77,13 +81,13 @@
 				<div class="branding-preview" style={interfaceTheme(baseColor, accentColor)} aria-label="Branding preview">
 					<strong>{applicationName || 'Application name'}</strong><button type="button" disabled>Primary button</button>
 				</div>
-				<div class="actions"><button type="submit" disabled={!dirty}>{saving ? 'Saving…' : 'Save settings'}</button><button class="secondary" type="button" onclick={reset}>Restore defaults</button></div>
+				<div class="actions"><button type="submit" disabled={!brandingDirty}>{saving ? 'Saving…' : 'Save settings'}</button><button class="secondary" type="button" onclick={reset}>Restore defaults</button></div>
 			</fieldset>
 		</form>
 		{#if message}<p class:error={failed} class:success={!failed} role={failed ? 'alert' : 'status'}>{message}</p>{/if}
 	</section>
-	<section aria-labelledby="users-heading"><h2 id="users-heading">User management</h2><p>Coming later. Accounts and administrator access are currently managed with the provisioning commands.</p></section>
-	<section aria-labelledby="email-heading"><h2 id="email-heading">Email settings</h2><p>Coming later. HTML exports do not send email.</p></section>
+	<section aria-labelledby="email-heading"><h2 id="email-heading">Email settings</h2><AdminEmailSettings initial={data.emailSettings} bind:dirty={emailDirty} /></section>
+	<section aria-labelledby="users-heading"><h2 id="users-heading">User management</h2><AdminUsers initial={data.users} currentUserId={data.currentUserId} /></section>
 </main>
 
 <style>
