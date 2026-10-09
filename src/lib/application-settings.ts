@@ -39,20 +39,20 @@ export function interfaceTheme(baseColor: string, accentColor: string): string {
 		`--ui-on-primary:${luminance > 0.179 ? '#000000' : '#ffffff'}`,
 		`--ui-accent:${accentColor}`
 	];
-	if (baseColor === DEFAULT_APPLICATION_SETTINGS.baseColor) {
-		return [...accent, ...['text', 'muted', 'bg', 'surface', 'soft', 'active', 'border', 'canvas']
-			.map((name) => `--ui-${name}:initial`)].join(';');
-	}
 	const mix = (percentage: number, base = 'white') => `color-mix(in srgb, ${baseColor} ${percentage}%, ${base})`;
 	return [
 		...accent,
-		`--ui-text:${mix(35, '#20252b')}`,
-		`--ui-muted:${mix(40, '#687078')}`,
-		`--ui-bg:${mix(4, '#f8f9fa')}`,
-		`--ui-surface:${mix(1)}`,
-		`--ui-soft:${mix(8, '#f4f5f7')}`,
-		`--ui-active:${mix(14, '#e9edf1')}`,
-		`--ui-border:${mix(22, '#c1c6cc')}`,
-		`--ui-canvas:${mix(10)}`
+		'--ui-text:#20252b',
+		'--ui-muted:#616975',
+		'--ui-bg:#f7f8fa',
+		'--ui-surface:#ffffff',
+		'--ui-soft:#f1f3f5',
+		'--ui-border:#e2e5e9',
+		'--ui-canvas:#f7f8fa',
+		`--ui-base:${baseColor}`,
+		`--ui-base-ink:${mix(35, '#20252b')}`,
+		`--ui-sidebar:${mix(6, '#f4f5f7')}`,
+		`--ui-active:${mix(12, '#f4f5f7')}`,
+		'--ui-shadow:0 1px 2px rgb(16 24 40 / 3%), 0 4px 16px rgb(16 24 40 / 3%)'
 	].join(';');
 }

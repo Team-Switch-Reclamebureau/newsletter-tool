@@ -4,6 +4,7 @@
 	import ContentEditor from '#lib/ContentEditor.svelte';
 	import UserMenu from '#lib/UserMenu.svelte';
 	import WorkspaceSidebar from '#lib/WorkspaceSidebar.svelte';
+	import TabIcon from '#lib/TabIcon.svelte';
 	import NewsletterPreview from '#lib/NewsletterPreview.svelte';
 	import EditionTable from '#lib/EditionTable.svelte';
 	import { jsonRequest, requestJson } from '#lib/api-client.js';
@@ -206,7 +207,7 @@
 
 	function beginEdition(id: string | null = null) {
 		const source = context?.drafts.find((entry) => entry.newsletter.id === id);
-		if (id && !source) { toasts.error('The source edition is no longer available. Reload the project before cloning.'); return; }
+		if (id && !source) { toasts.error('The source campaign is no longer available. Reload the project before cloning.'); return; }
 		cloneSourceId = source?.newsletter.id ?? null;
 		editionName = source ? `${source.newsletter.name.slice(0, 155)} copy` : '';
 		newEdition = true;
@@ -217,11 +218,11 @@
 		const entry = current?.drafts.find((value) => value.newsletter.id === id);
 		if (!current || !entry) return;
 		if (current.deletingEditionId || current.uploading || current.deletingAssetId || current.templateSaving || current.testEmailSending || current.drafts.some((value) => value.saving)) {
-			toasts.error('Wait for the current edition or image operation before deleting.');
+			toasts.error('Wait for the current campaign or image operation before deleting.');
 			return;
 		}
 		if (entry.revision && current.drafts.some((value) => !value.revision && value.cloneSourceId === id)) {
-			toasts.error('Save or delete this edition’s unsaved clones before deleting their source.');
+			toasts.error('Save or delete this campaign’s unsaved clones before deleting their source.');
 			return;
 		}
 		if (entry.revision) {
@@ -230,18 +231,18 @@
 				...value.drafts.filter((value) => value !== entry && serializeNewsletter(value.newsletter) !== value.snapshot).map((value) => serializeNewsletter(value.newsletter))
 			]);
 			if (entry.editionAssets.some((asset) => sources.some((source) => source.includes(`/media/${asset.id}.webp`)))) {
-				toasts.error('This edition’s images are referenced in another draft or a template. Save those changes or remove the references before deleting.');
+				toasts.error('This campaign’s images are referenced in another draft or a template. Save those changes or remove the references before deleting.');
 				return;
 			}
 		}
-		if (!window.confirm(`Delete edition "${entry.newsletter.name || 'Untitled newsletter'}"? Its content and unsaved changes will be discarded, and its public HTML link will stop working. Images used by other current editions or templates will be kept. Unused edition-only image files will be permanently deleted.`)) return;
+		if (!window.confirm(`Delete campaign "${entry.newsletter.name || 'Untitled campaign'}"? Its content and unsaved changes will be discarded, and its public HTML link will stop working. Images used by other current campaigns or templates will be kept. Unused campaign-only image files will be permanently deleted.`)) return;
 		current.deletingEditionId = id;
 		try {
 			if (entry.revision) {
 				const result = await requestJson<{ deletedAssetIds: string[]; message: string }>(`/api/projects/${current.project.id}/newsletters/${id}`, jsonRequest('DELETE', { revision: entry.revision }));
 				for (const value of current.drafts) value.editionAssets = value.editionAssets.filter((asset) => !result.deletedAssetIds.includes(asset.id));
 				toasts.success(result.message);
-			} else toasts.success('Unsaved edition discarded.');
+			} else toasts.success('Unsaved campaign discarded.');
 			current.drafts = current.drafts.filter((value) => value !== entry);
 			if (current.activeId === id) current.activeId = null;
 			if (context === current) {
@@ -274,9 +275,9 @@
 		if (!context || !editionName.trim()) return;
 		if (cloneSourceId) {
 			const source = context.drafts.find((entry) => entry.newsletter.id === cloneSourceId);
-			if (!source) { toasts.error('The source edition is no longer available. Choose an edition to clone again.'); return; }
+			if (!source) { toasts.error('The source campaign is no longer available. Choose a campaign to clone again.'); return; }
 			addDraft(cloneNewsletter(source.newsletter, editionName), context, source);
-			toasts.success('Edition cloned as a new draft. Save it to persist it on the server.');
+			toasts.success('Campaign cloned as a new draft. Save it to persist it on the server.');
 		} else addDraft(createNewsletter(editionName));
 	}
 
@@ -300,7 +301,7 @@
 			entry.snapshot = serializeNewsletter(result.newsletter);
 			if (serializeNewsletter(entry.newsletter) === submitted) entry.newsletter = result.newsletter;
 			else entry.newsletter = { ...entry.newsletter, createdAt: result.newsletter.createdAt, updatedAt: result.newsletter.updatedAt };
-			toasts.success('Newsletter saved. Its HTML permalink now reflects the latest saved edition.');
+			toasts.success('Campaign saved. Its HTML permalink now reflects the latest saved campaign.');
 		} catch (cause) { entry.error = message(cause); toasts.error(entry.error); }
 		finally { entry.saving = false; }
 	}
@@ -352,7 +353,7 @@
 	}
 
 	async function storeImage(current: ProjectContext, file: File, edition?: Draft): Promise<ImageAsset> {
-		if (edition && !edition.revision) throw new Error('Save this edition before uploading edition images.');
+		if (edition && !edition.revision) throw new Error('Save this campaign before uploading campaign images.');
 		if (!file.size || file.size > MAX_IMAGE_BYTES) throw new Error('Choose an image no larger than 5 MB.');
 		const form = new FormData();
 		form.set('image', file);
@@ -378,7 +379,7 @@
 		const current = context;
 		if (!current) throw new Error('Choose a project first.');
 		const entry = current.drafts.find((entry) => entry.newsletter.id === newsletterId);
-		if (scope === 'edition' && !entry?.revision) throw new Error('Save this edition before uploading edition images.');
+		if (scope === 'edition' && !entry?.revision) throw new Error('Save this campaign before uploading campaign images.');
 		const asset = await uploadImage(current, file, scope === 'edition' ? entry : undefined);
 		if (!entry?.newsletter.items.some((item) => item.id === itemId)) {
 			toasts.success('Image uploaded to the library. The original item no longer exists.');
@@ -404,17 +405,17 @@
 		const files = Array.from(input.files ?? []);
 		const current = context;
 		if (!files.length || !current) return;
-		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { toasts.error('An image or edition operation is already in progress. Please wait.'); input.value = ''; return; }
+		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { toasts.error('An image or campaign operation is already in progress. Please wait.'); input.value = ''; return; }
 		const edition = editionView ? draft : undefined;
 		if (editionView && !edition?.revision) {
-			toasts.error('Open and save an edition before uploading edition images.');
+			toasts.error('Open and save a campaign before uploading campaign images.');
 			input.value = '';
 			return;
 		}
 		current.uploading = true;
 		current.libraryUploadTotal = files.length;
 		current.libraryUploads = [];
-		current.libraryUploadDestination = edition ? `Edition: ${edition.newsletter.name}` : 'Project images';
+		current.libraryUploadDestination = edition ? `Campaign: ${edition.newsletter.name}` : 'Project images';
 		try {
 			await uploadImages(files, (file) => storeImage(current, file, edition), (result) => {
 				current.libraryUploads = [...current.libraryUploads, result];
@@ -435,17 +436,17 @@
 	async function deleteLibraryImage(asset: ImageAsset) {
 		const current = context;
 		if (!current) return;
-		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { toasts.error('An image or edition operation is already in progress. Please wait.'); return; }
+		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { toasts.error('An image or campaign operation is already in progress. Please wait.'); return; }
 		const edition = editionView ? draft : undefined;
 		if (editionView && !edition?.revision) {
-			toasts.error('Save this edition before removing images from its library.');
+			toasts.error('Save this campaign before removing images from its library.');
 			return;
 		}
 		if (imageUsedInDrafts(asset)) {
-			toasts.error('This image is used in edition content or a template. Remove those references and save before deleting it.');
+			toasts.error('This image is used in campaign content or a template. Remove those references and save before deleting it.');
 			return;
 		}
-		if (!window.confirm(`Delete "${asset.filename}" from ${edition ? `edition "${edition.newsletter.name}"` : 'the project library'}? Its file will be permanently deleted if no other libraries use it. Images used in current saved editions or templates are protected. Previously imported Mailchimp campaigns do not protect unused files.`)) return;
+		if (!window.confirm(`Delete "${asset.filename}" from ${edition ? `campaign "${edition.newsletter.name}"` : 'the project library'}? Its file will be permanently deleted if no other libraries use it. Images used in current saved campaigns or templates are protected. Previously imported Mailchimp campaigns do not protect unused files.`)) return;
 		current.deletingAssetId = asset.id;
 		try {
 			const suffix = edition ? `?newsletterId=${edition.newsletter.id}` : '';
@@ -545,7 +546,7 @@
 	}
 
 	async function reloadProject() {
-		if (currentDeletion) { toasts.error('Wait for edition deletion to finish before reloading.'); return; }
+		if (currentDeletion) { toasts.error('Wait for campaign deletion to finish before reloading.'); return; }
 		if (unsaved && !window.confirm('Export any drafts you want to keep. Reloading discards unsaved changes in the selected project. Continue?')) return;
 		try {
 			const result = await requestJson<{ projects: RemoteProject[] }>('/api/projects');
@@ -606,19 +607,19 @@
 								{#if selected}<button class="project-link" title={selected.name} onclick={() => mode = 'editions'}>{selected.name}</button>
 								{:else}<span class="crumb-name">Getting started</span>{/if}
 							</li>
-							{#if editionView && draft}<li aria-current="page"><span class="crumb-name" title={draft.newsletter.name || 'Untitled newsletter'}>{draft.newsletter.name || 'Untitled newsletter'}</span></li>{/if}
+							{#if editionView && draft}<li aria-current="page"><span class="crumb-name" title={draft.newsletter.name || 'Untitled campaign'}>{draft.newsletter.name || 'Untitled campaign'}</span></li>{/if}
 						</ol>
 					</nav>
 				</div>
 				{#if draft && editionView}
 					<div class="header-save save-actions">
 						<span role="status">{draft.saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'Saved to server'}</span>
-						<button class="primary" aria-label="Save newsletter" disabled={draft.saving || currentDeletion} onclick={saveEdition}>{#if draft.saving}Saving…{:else}Save<span class="save-detail">{' newsletter'}</span>{/if}</button>
+						<button class="primary" aria-label="Save campaign" disabled={draft.saving || currentDeletion} onclick={saveEdition}>{#if draft.saving}Saving…{:else}Save<span class="save-detail">{' campaign'}</span>{/if}</button>
 					</div>
 				{/if}
 			</header>
 			{#if !selected}
-				<div class="page-heading"><div><div class="eyebrow">A LITTLE LESS WORK. A BETTER EMAIL.</div><h1>Your next newsletter starts here<span>.</span></h1><p>One template. A new story with every edition.</p></div></div>
+				<div class="page-heading"><div><div class="eyebrow">A LITTLE LESS WORK. A BETTER EMAIL.</div><h1>Your next newsletter starts here<span>.</span></h1><p>One template. A new story with every campaign.</p></div></div>
 			{/if}
 			{#if newProject}
 				<form class="inline-form panel" onsubmit={createProject}><label for="project-name">Project name</label><input id="project-name" bind:value={projectName} maxlength="160" required /><button class="primary" disabled={creatingProject || !projectName.trim()}>{creatingProject ? 'Creating…' : 'Create project'}</button><button class="secondary" type="button" onclick={() => newProject = false}>Cancel</button></form>
@@ -627,20 +628,20 @@
 			{:else if !context}
 				<section class="panel empty-state"><h2>A place for every project.</h2><p>Create a project to start with a ready-to-use MJML template, or import your own template afterwards.</p><button class="primary" onclick={() => newProject = true}>Create your first project</button>{#if selected}<button class="secondary" onclick={reloadProject}>Reload project</button>{/if}</section>
 			{:else}
-				{#if newEdition}<form class="inline-form panel" onsubmit={createEdition}><label for="edition-name">{cloneSourceId ? 'Cloned edition name' : 'Newsletter name'}</label><input id="edition-name" bind:value={editionName} maxlength="160" required /><button class="primary" disabled={!editionName.trim()}>{cloneSourceId ? 'Clone newsletter' : 'Create newsletter'}</button><button class="secondary" type="button" onclick={() => { newEdition = false; cloneSourceId = null; }}>Cancel</button></form>{/if}
-				<div class="project-tools"><div class="view-tabs" aria-label={editionView ? 'Edition views' : 'Project views'}>
+				{#if newEdition}<form class="inline-form panel" onsubmit={createEdition}><label for="edition-name">{cloneSourceId ? 'Cloned campaign name' : 'Campaign name'}</label><input id="edition-name" bind:value={editionName} maxlength="160" required /><button class="primary" disabled={!editionName.trim()}>{cloneSourceId ? 'Clone campaign' : 'Create campaign'}</button><button class="secondary" type="button" onclick={() => { newEdition = false; cloneSourceId = null; }}>Cancel</button></form>{/if}
+				<div class="project-tools"><div class="view-tabs" aria-label={editionView ? 'Campaign views' : 'Project views'}>
 					{#if editionView}
-						<button class:active={mode === 'content'} onclick={() => mode = 'content'}>Content</button>
-						<button class:active={mode === 'edition-settings'} onclick={() => mode = 'edition-settings'}>Settings</button>
-						<button class:active={mode === 'edition-images'} onclick={() => mode = 'edition-images'}>Edition images ({draft?.editionAssets.length ?? 0})</button>
-						<button class:active={mode === 'edition-publish'} onclick={() => mode = 'edition-publish'}>Test &amp; publish</button>
+						<button class:active={mode === 'content'} onclick={() => mode = 'content'}><TabIcon name="content" />Content</button>
+						<button class:active={mode === 'edition-settings'} onclick={() => mode = 'edition-settings'}><TabIcon name="settings" />Settings</button>
+						<button class:active={mode === 'edition-images'} onclick={() => mode = 'edition-images'}><TabIcon name="image" />Campaign images ({draft?.editionAssets.length ?? 0})</button>
+						<button class:active={mode === 'edition-publish'} onclick={() => mode = 'edition-publish'}><TabIcon name="publish" />Test &amp; publish</button>
 					{:else}
-						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}>Editions ({context.drafts.length})</button>
-						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}>Templates</button>
-						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}>Project images ({context.assets.length})</button>
-						<button class:active={mode === 'sharing'} onclick={openSharing}>Sharing</button>
+						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}><TabIcon name="editions" />Campaigns ({context.drafts.length})</button>
+						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}><TabIcon name="templates" />Templates</button>
+						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}><TabIcon name="image" />Project images ({context.assets.length})</button>
+						<button class:active={mode === 'sharing'} onclick={openSharing}><TabIcon name="sharing" />Sharing</button>
 					{/if}
-				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView}<button class="primary" onclick={() => beginEdition()}>+ New newsletter</button>{/if}</div></div>
+				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
 				{#if mode === 'editions'}
 					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.testEmailSending || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
 				{:else if mode === 'sharing'}
@@ -669,51 +670,51 @@
 						<h2 id="publish-heading">Test &amp; publish</h2>
 						<section class="test-email" aria-labelledby="test-email-heading">
 							<h3 id="test-email-heading">Send a test email</h3>
-							<p>Tests use the latest saved edition and saved project templates, not unsaved edits. They use the sender and SMTP settings configured by an administrator.</p>
+							<p>Tests use the latest saved campaign and saved project templates, not unsaved edits. They use the sender and SMTP settings configured by an administrator.</p>
 							<form onsubmit={saveTestRecipients}>
 								<label for="test-recipients">Project test recipients</label>
 								<textarea id="test-recipients" rows="3" bind:value={context.testRecipients} maxlength={MAX_TEST_RECIPIENTS_LENGTH} disabled={context.testRecipientsSaving || context.testEmailSending} placeholder="person@example.com, colleague@example.com"></textarea>
-								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by every edition and member of the project. Each recipient receives a separate message.</p>
+								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by every campaign and member of the project. Each recipient receives a separate message.</p>
 								<div class="save-actions">
 									<button class="secondary" disabled={!recipientsDirty || context.testRecipientsSaving || context.testEmailSending}>{context.testRecipientsSaving ? 'Saving recipients...' : 'Save recipients'}</button>
 									<button class="primary" type="button" onclick={sendTestEmail} disabled={!draft.revision || draft.saving || currentDeletion || recipientsDirty || !context.testRecipientsSettings.recipients.length || context.testRecipientsSaving || context.testEmailSending}>{context.testEmailSending ? 'Sending test...' : 'Send test email'}</button>
 								</div>
-								{#if !draft.revision}<p>Save this edition before sending a test email.</p>{/if}
+								{#if !draft.revision}<p>Save this campaign before sending a test email.</p>{/if}
 								{#if recipientsDirty}<p>Save the recipient list before sending.</p>{/if}
 								<p>SMTP acceptance does not guarantee inbox delivery. Check the recipients' inboxes and spam folders.</p>
 							</form>
 						</section>
 						<h3>Publish via Mailchimp</h3>
-						<p>Import this edition into Mailchimp using its public HTML link. The link stays the same and reflects the latest saved newsletter.</p>
-						{#if dirty}<p class="notice" role="status">You have unsaved changes. Save the newsletter to update its public HTML.</p>{/if}
-						<section class="edition-export" aria-label="Edition HTML export">
+						<p>Import this campaign into Mailchimp using its public HTML link. The link stays the same and reflects the latest saved newsletter.</p>
+						{#if dirty}<p class="notice" role="status">You have unsaved changes. Save the campaign to update its public HTML.</p>{/if}
+						<section class="edition-export" aria-label="Campaign HTML export">
 							{#if draft.permalink}
 								<label for="html-permalink">Public HTML permalink</label>
 								<div class="export-actions"><input id="html-permalink" value={draft.permalink} readonly onfocus={(event) => event.currentTarget.select()} /><button class="secondary" onclick={() => copyPermalink(draft.newsletter.id)}>Copy link</button><a class="secondary" href={draft.permalink} target="_blank" rel="noreferrer">Open HTML</a><a class="secondary" href={draft.permalink} download={`${draft.newsletter.id}.html`}>Download HTML</a></div>
-								<p>Always uses the latest saved edition, UTM settings, and project templates. Anyone with this link can access the HTML. Mailchimp must be able to reach this URL from the internet.</p>
+								<p>Always uses the latest saved campaign, UTM settings, and project templates. Anyone with this link can access the HTML. Mailchimp must be able to reach this URL from the internet.</p>
 							{:else}
-								<p>Save this edition to create its public HTML permalink.</p>
-								<button class="primary" disabled={draft.saving || currentDeletion} onclick={saveEdition}>{draft.saving ? 'Saving...' : 'Save newsletter & create link'}</button>
+								<p>Save this campaign to create its public HTML permalink.</p>
+								<button class="primary" disabled={draft.saving || currentDeletion} onclick={saveEdition}>{draft.saving ? 'Saving...' : 'Save campaign & create link'}</button>
 							{/if}
 						</section>
 						<button class="secondary" onclick={exportEdition}>Export JSON</button>
 					</section>
 				{:else if mode === 'edition-settings' && draft}
-					<section class="panel library"><h2>Edition settings</h2>
+					<section class="panel library"><h2>Campaign settings</h2>
 						<form class="utm-form" onsubmit={(event) => { event.preventDefault(); void saveEdition(); }}>
-							<label for="edition-newsletter-name">Newsletter name</label><input id="edition-newsletter-name" value={draft.newsletter.name} oninput={(event) => { if (draft) { draft.newsletter.name = event.currentTarget.value; draft.error = ''; } }} maxlength="160" required disabled={draft.saving || currentDeletion} />
+							<label for="edition-newsletter-name">Campaign name</label><input id="edition-newsletter-name" value={draft.newsletter.name} oninput={(event) => { if (draft) { draft.newsletter.name = event.currentTarget.value; draft.error = ''; } }} maxlength="160" required disabled={draft.saving || currentDeletion} />
 							<h3>UTM link tracking</h3>
-							<p>Filled values are added to all HTTP(S) links in this edition, including links in its templates. Other query parameters and fragments are preserved. Images, mailto links, and anchor links are not tracked. Leave values blank to leave those parameters unchanged.</p>
+							<p>Filled values are added to all HTTP(S) links in this campaign, including links in its templates. Other query parameters and fragments are preserved. Images, mailto links, and anchor links are not tracked. Leave values blank to leave those parameters unchanged.</p>
 							{#each UTM_KEYS as key (key)}
 								<label for={`edition-${key}`}>{key}</label><input id={`edition-${key}`} bind:value={draft.newsletter.utm[key]} maxlength="200" disabled={draft.saving || currentDeletion} placeholder={key === 'utm_source' || key === 'utm_medium' ? 'mail' : key === 'utm_campaign' ? 'nieuwsbrief' : 'october_26'} />
 							{/each}
-							<p>Saving applies this edition's settings and content changes and updates its HTML permalink. Other editions keep their own values.</p>
-							<div class="save-actions"><span>{dirty ? 'Unsaved edition changes' : 'Edition saved'}</span><button class="primary" disabled={draft.saving || currentDeletion}>{draft.saving ? 'Saving…' : 'Save edition settings'}</button></div>
+							<p>Saving applies this campaign's settings and content changes and updates its HTML permalink. Other campaigns keep their own values.</p>
+							<div class="save-actions"><span>{dirty ? 'Unsaved campaign changes' : 'Campaign saved'}</span><button class="primary" disabled={draft.saving || currentDeletion}>{draft.saving ? 'Saving…' : 'Save campaign settings'}</button></div>
 						</form>
 					</section>
 				{:else if mode === 'project-images' || mode === 'edition-images'}
-					<section class="panel library"><h2>{editionView ? 'Edition images' : 'Project images'}</h2><p>{editionView ? 'These images belong to this edition and are inherited by its clones. Shared project images remain available in the content editor.' : 'These images are available in every edition of this project.'} All image URLs remain public for email delivery.</p>
-						{#if editionView && draft && !draft.revision}<p>Save this edition before uploading edition images.</p>{/if}
+					<section class="panel library"><h2>{editionView ? 'Campaign images' : 'Project images'}</h2><p>{editionView ? 'These images belong to this campaign and are inherited by its clones. Shared project images remain available in the content editor.' : 'These images are available in every campaign of this project.'} All image URLs remain public for email delivery.</p>
+						{#if editionView && draft && !draft.revision}<p>Save this campaign before uploading campaign images.</p>{/if}
 						<p>Select one or more JPEG, PNG, or WebP images. Each image can be up to 5 MB and 20 megapixels. Stored as immutable WebP files with public URLs.</p><label for="library-upload">Upload images</label><input id="library-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={context.uploading || context.deletingAssetId !== null || (editionView && !draft?.revision)} onchange={(event) => uploadLibraryImages(event.currentTarget)} />
 						{#if context.libraryUploadTotal}
 							<p>Upload results for {context.libraryUploadDestination}</p>
@@ -722,9 +723,9 @@
 								{#each context.libraryUploads as result, index (index)}<li class:upload-failed={result.status === 'failed'}><strong>{result.filename}</strong>: {#if result.status === 'uploaded'}Uploaded{:else}<span role="alert">{result.error}</span>{/if}</li>{/each}
 							</ul>
 						{:else if context.uploading}<p role="status">Uploading image…</p>{/if}
-						<div class="asset-grid">{#each libraryAssets as asset (asset.id)}<article><img src={asset.url} alt={asset.filename} loading="lazy" /><strong>{asset.filename}</strong><small>{asset.width} × {asset.height} · {Math.ceil(asset.bytes / 1024)} KB · {asset.scope === 'edition' ? 'Edition image' : 'Project image'}</small><a href={asset.url} target="_blank" rel="noreferrer">Open public image ↗</a>{#if editionView && draft}<button class="secondary" disabled={context.deletingAssetId !== null || !itemImageField()} onclick={() => addImageItem(asset)}>Add as item</button>{#if !itemImageField()}<small>Add an image field to the item template to use this image in an item.</small>{/if}{/if}
+						<div class="asset-grid">{#each libraryAssets as asset (asset.id)}<article><img src={asset.url} alt={asset.filename} loading="lazy" /><strong>{asset.filename}</strong><small>{asset.width} × {asset.height} · {Math.ceil(asset.bytes / 1024)} KB · {asset.scope === 'edition' ? 'Campaign image' : 'Project image'}</small><a href={asset.url} target="_blank" rel="noreferrer">Open public image ↗</a>{#if editionView && draft}<button class="secondary" disabled={context.deletingAssetId !== null || !itemImageField()} onclick={() => addImageItem(asset)}>Add as item</button>{#if !itemImageField()}<small>Add an image field to the item template to use this image in an item.</small>{/if}{/if}
 							<button class="secondary delete-image" aria-label={`Delete image ${asset.filename}`} disabled={context.uploading || context.deletingAssetId !== null || imageUsedInDrafts(asset) || (asset.scope === 'edition' && !draft?.revision)} onclick={() => deleteLibraryImage(asset)}>{context.deletingAssetId === asset.id ? 'Deleting…' : 'Delete image'}</button>
-							{#if imageUsedInDrafts(asset)}<small>Used in edition content or a template. Remove references and save first.</small>{/if}
+							{#if imageUsedInDrafts(asset)}<small>Used in campaign content or a template. Remove references and save first.</small>{/if}
 						</article>{/each}</div>
 						{#if !libraryAssets.length}<p>No images in this library yet. Upload them here or directly from an item.</p>{/if}
 					</section>
@@ -739,10 +740,10 @@
 								<form class="template-form" onsubmit={saveTemplates}>
 									<label for="template-project-name">Project name</label><input id="template-project-name" bind:value={context.name} maxlength="160" required />
 									<label for="project-template">Template MJML</label><textarea id="project-template" bind:value={context.template} rows="12" spellcheck="false"></textarea>
-									<p>Place exactly one <code>{'{{items}}'}</code> inside mj-body. Use <code>{'{{newsletter_name}}'}</code> for the edition name. Typed tags such as <code>{'{{text:headline}}'}</code> create newsletter-level fields.</p>
+									<p>Place exactly one <code>{'{{items}}'}</code> inside mj-body. Use <code>{'{{newsletter_name}}'}</code> for the campaign name. Typed tags such as <code>{'{{text:headline}}'}</code> create newsletter-level fields.</p>
 									<label for="template-import">Import template.mjml</label><input id="template-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'template')} />
 									<label for="item-template">Item snippet MJML</label><textarea id="item-template" bind:value={context.snippet} rows="8" spellcheck="false" placeholder="Leave empty to use the default item layout."></textarea>
-									<p>Use <code>{'{{type:name}}'}</code> for per-item fields. Types: text, textarea, url, image, number. Untyped content placeholders are not supported. Upload shared images in Project images or edition-only images in Edition images, then select them in image fields.</p>
+									<p>Use <code>{'{{type:name}}'}</code> for per-item fields. Types: text, textarea, url, image, number. Untyped content placeholders are not supported. Upload shared images in Project images or campaign-only images in Campaign images, then select them in image fields.</p>
 									<label for="snippet-import">Import item.mjml</label><input id="snippet-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'snippet')} />
 									<div class="save-actions"><span>{templateDirty ? 'Unsaved project changes' : 'Project saved'}</span><button class="primary" disabled={context.templateSaving}>{context.templateSaving ? 'Saving…' : 'Save templates'}</button></div>
 								</form>
@@ -762,19 +763,20 @@
 	:global(button) { font: inherit; cursor: pointer; }
 	:global(button:disabled) { cursor: default; opacity: .55; }
 	:global(button:focus-visible), :global(a:focus-visible), :global(input:focus-visible), :global(textarea:focus-visible), :global(select:focus-visible) { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
-	.brand { display: block; font-size: 29px; font-weight: 750; letter-spacing: -1.5px; color: var(--ui-accent, #425f30); text-decoration: none; margin-bottom: 26px; overflow-wrap: anywhere; }
+	.brand { display: block; font-size: 27px; font-weight: 750; letter-spacing: -1px; color: var(--ui-base-ink, #425f30); text-decoration: none; margin-bottom: 32px; overflow-wrap: anywhere; }
 	.brand span, h1 span { color: var(--ui-accent, #839e5d); }
 	.eyebrow { font-size: 9px; font-weight: 600; letter-spacing: 1.5px; color: var(--ui-muted, #839273); }
 	.app { display: flex; min-height: 100vh; }
 	nav { min-height: 0; overflow-y: auto; }
 	.project-heading { display: flex; justify-content: space-between; font-size: 10px; color: var(--ui-muted, #7b8971); letter-spacing: 1px; margin: 4px 8px 15px; }
-	nav button { width: 100%; display: flex; gap: 9px; background: transparent; border: 0; padding: 13px 10px; text-align: left; color: var(--ui-muted, #6d7a60); border-radius: 5px; margin-bottom: 5px; }
+	nav button { width: 100%; display: flex; gap: 9px; background: transparent; border: 0; padding: 12px; text-align: left; color: var(--ui-muted, #6d7a60); border-radius: 8px; margin-bottom: 5px; font-size: 13px; }
+	nav button:hover { background: var(--ui-soft); color: var(--ui-text); }
 	nav button span { overflow-wrap: anywhere; }
-	nav button.chosen { background: var(--ui-active, #dce7ce); color: var(--ui-text, #35502d); }
+	nav button.chosen { background: var(--ui-active, #dce7ce); color: var(--ui-base-ink, #35502d); font-weight: 600; }
 	.new-project { margin-top: 13px; }
 	.sidebar-footer { margin-top: auto; padding-top: 32px; }
 	.workspace { flex: 1; min-width: 0; padding: 0 35px; display: flex; flex-direction: column; }
-	header { height: 85px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--ui-border, #e1e5dc); font-size: 11px; color: var(--ui-muted, #839076); }
+	header { height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--ui-border, #e1e5dc); font-size: 12px; color: var(--ui-muted, #839076); }
 	.project-header { margin-bottom: 24px; }
 	.workspace-location { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
 	.breadcrumb { min-width: 0; overflow: hidden; }
@@ -789,15 +791,16 @@
 	.menu-toggle { display: none; flex-shrink: 0; align-items: center; gap: 7px; border: 1px solid var(--ui-border, #d3ddc8); border-radius: 7px; background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); padding: 9px 10px; font-size: 11px; }
 	.menu-toggle svg { width: 17px; height: 17px; }
 	.page-heading { display: flex; gap: 20px; align-items: center; justify-content: space-between; padding: 33px 0; }
-	h1 { font-family: Georgia, serif; font-size: clamp(28px, 3vw, 40px); font-weight: 400; letter-spacing: -1px; margin: 12px 0; overflow-wrap: anywhere; }
-	h2 { font-family: Georgia, serif; font-size: 25px; font-weight: 400; }
+	h1 { font-size: clamp(28px, 3vw, 36px); font-weight: 650; letter-spacing: -1.2px; margin: 12px 0; overflow-wrap: anywhere; }
+	h2 { font-size: 22px; font-weight: 650; letter-spacing: -.6px; }
 	h3 { font-size: 13px; }
-	p { color: var(--ui-muted, #7a886e); font-size: 12px; line-height: 1.8; }
+	p { color: var(--ui-muted, #7a886e); font-size: 13px; line-height: 1.7; }
 	.page-heading p { margin: 0; }
-	.primary, .secondary { border-radius: 5px; padding: 10px 13px; font-size: 11px; white-space: nowrap; }
+	.primary, .secondary { border-radius: 7px; padding: 10px 14px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+	.primary:hover:not(:disabled), .secondary:hover:not(:disabled) { box-shadow: 0 2px 4px rgb(16 24 40 / 10%); }
 	.primary { color: var(--ui-on-primary, #f3f8ec); background: var(--ui-primary, #304d36); border: 1px solid var(--ui-primary, #304d36); }
 	.secondary { color: var(--ui-text, #536a45); background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #d3ddc8); }
-	.panel { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 9px; overflow: hidden; }
+	.panel { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); overflow: hidden; }
 	.empty-state { padding: 45px; text-align: center; margin-bottom: 30px; }
 	.empty-state .primary { margin: 12px; }
 	.inline-form { padding: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
@@ -807,9 +810,10 @@
 	.save-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 	.save-actions > span { color: var(--ui-muted, #78886b); font-size: 10px; }
 	.project-tools { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; }
-	.view-tabs { display: flex; flex-wrap: wrap; gap: 3px; }
-	.view-tabs button { border: 0; border-radius: 4px; color: var(--ui-muted, #7b8a6e); background: transparent; padding: 9px 11px; font-size: 11px; }
-	.view-tabs button.active { color: var(--ui-text, #3f5f2e); background: var(--ui-active, #e3ecd6); }
+	.view-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+	.view-tabs button { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 7px; color: var(--ui-muted, #7b8a6e); background: transparent; padding: 10px 13px; font-size: 12px; white-space: nowrap; }
+	.view-tabs button:hover { color: var(--ui-text); background: var(--ui-soft); }
+	.view-tabs button.active { color: var(--ui-base-ink, #3f5f2e); background: var(--ui-active, #e3ecd6); font-weight: 600; }
 	.editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; }
 	.editor-panel { min-width: 0; }
 	.panel-toolbar { display: flex; align-items: center; justify-content: space-between; height: 58px; padding: 14px 18px; border-bottom: 1px solid var(--ui-border, #e1e8d8); }

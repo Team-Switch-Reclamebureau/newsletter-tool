@@ -4,9 +4,11 @@ and persistent image storage. No managed-service subscription is required.
 ## Hosted workspace
 
 Users sign in to private projects. Each project has editable MJML templates,
-newsletter editions, a reusable image library, and live HTML export permalinks.
+newsletter campaigns, a reusable image library, and live HTML export permalinks.
+The interface calls newsletter variations **Campaigns**; internal edition names,
+API routes, stored data, and JSON formats remain unchanged.
 Any project member can share a project with other provisioned accounts as editors
-from the project's **Sharing** tab. Access covers all editions, templates, and
+from the project's **Sharing** tab. Access covers all campaigns, templates, and
 images in the project; newly added editors can also share it with others.
 The Sharing tab lists everyone with access by name, email, and project role,
 including the owner. The list updates after adding a member; use **Refresh members**
@@ -17,25 +19,25 @@ create accounts with the provisioning script.
 
 Images are intentionally public so email recipients can view them without
 signing in. Project management, templates, and newsletter editing are private.
-Each saved edition has an unlisted public HTML URL for Mailchimp import; anyone
+Each saved campaign has an unlisted public HTML URL for Mailchimp import; anyone
 with that link can fetch the latest saved newsletter without signing in.
 Uploads accept static JPEG, PNG, and WebP images up to **5 MB / 20 megapixels**,
 decode and normalize them to WebP, strip metadata, and create immutable URLs.
 External HTTP(S) image URLs remain supported. Typed image fields store delivery
 URLs, and the server verifies that hosted images belong to the
-project and are available in the selected edition. Per-item alt text is supported
+project and are available in the selected campaign. Per-item alt text is supported
 via a typed field such as `{{text:photo_alt}}`.
 
-Use **Project images** in the project views or open an edition and use
-**Edition images**. Uploads go to the library shown by that tab.
+Use **Project images** in the project views or open a campaign and use
+**Campaign images**. Uploads go to the library shown by that tab.
 Project images are available
-in every edition; edition images appear only in that edition's image choices
-and its clones. Open and save an edition before uploading edition-only images.
+in every campaign; campaign images appear only in that campaign's image choices
+and its clones. Open and save a campaign before uploading campaign-only images.
 Both scopes appear as separate groups in typed image selectors.
-Direct item uploads also offer a project/edition destination.
+Direct item uploads also offer a project/campaign destination.
 Existing images remain project-wide after upgrading.
 
-Edition scope controls editing and image selection, not private delivery:
+Campaign scope controls editing and image selection, not private delivery:
 the image URLs are still public so email recipients can load them.
 
 In either image-library tab, **Upload images** accepts multiple files in one selection.
@@ -47,13 +49,13 @@ Retry failed files by selecting them again. Direct item uploads still select a
 single image for that item.
 
 Use **Delete image** on a library card to remove an unused image, with confirmation.
-Images referenced by current saved edition content or project templates cannot
+Images referenced by current saved campaign content or project templates cannot
 be deleted; local unsaved uses are protected as well. Clear draft references
 and save first. Old HTML exports and imported Mailchimp campaigns do not protect
 images: deleting an unused file can break images in a previously imported or
 sent campaign.
-For an unused edition image shared with clones, removal affects only the selected
-edition library. The stored file is permanently removed only after its last
+For an unused campaign image shared with clones, removal affects only the selected
+campaign library. The stored file is permanently removed only after its last
 library association is removed. Shared project images are removed project-wide.
 Deletion failures are reported explicitly and can be retried.
 
@@ -63,7 +65,7 @@ to persist across refreshes. JSON export remains available for portable data
 backups; the newsletter JSON import UI is not currently exposed in the workspace.
 Templates can be imported from `.mjml` files.
 
-The edition **Content** tab offers two editor layouts:
+The campaign **Content** tab offers two editor layouts:
 - **Split** keeps the full content form beside the live desktop/mobile preview.
 - **Dynamic** lets you type directly into template-driven text in the preview.
   Click an image or link to select its field in the focused panel; the field
@@ -75,15 +77,17 @@ Both layouts edit the same unsaved draft. Text is plain text (multiline fields
 preserve line breaks), not arbitrary HTML. The preview refreshes after leaving
 an inline text field so typing does not interrupt the cursor. Static template
 content and styling stay in the Templates tab. Preview links do not navigate,
-and template scripts remain disabled. Use **Save newsletter** to persist changes;
+and template scripts remain disabled. Use **Save campaign** to persist changes;
 editor-only field markers are never included in saved content or HTML exports.
 The layout preference is stored with each user account and restored across
-editions, projects, browser refreshes, and sign-ins, including other devices.
+campaigns, projects, browser refreshes, and sign-ins, including other devices.
 Failed preference saves are shown explicitly and restore the previous layout.
-Rename newsletters in the edition **Settings** tab alongside UTM settings.
+Rename campaigns in the campaign **Settings** tab alongside UTM settings.
 The account panel at the bottom of the sidebar shows the user's profile and
 button-style actions for **Admin settings** (administrators only),
 **Change password**, and **Sign out**.
+Project and campaign view tabs pair text labels with consistent outline icons;
+icons are decorative, so accessible names and keyboard behavior remain unchanged.
 On screens up to 1100px wide, navigation starts collapsed behind **Menu** in the
 workspace header. The drawer includes projects and account actions; selecting a
 project or starting a new project closes it. Use its close button, Escape, or
@@ -95,16 +99,16 @@ hovered or keyboard-focused. Errors remain until dismissed. The same notificatio
 system is used for administrator and password actions; inline validation, preview
 errors, save state, and detailed upload results remain beside their controls.
 
-### Test and publish editions
+### Test and publish campaigns
 
-The **Test & publish** tab can send a test of the latest saved edition, including
+The **Test & publish** tab can send a test of the latest saved campaign, including
 saved project templates and UTM settings. Unsaved content/template edits are not
 sent. Configure the shared SMTP sender in **Admin settings → Email settings** first.
 The same SMTP configuration is used for account emails and newsletter tests.
 
 Enter up to **20 comma-separated email addresses** in **Project test recipients**
 and click **Save recipients**, then **Send test email**. The recipient list is
-stored in PostgreSQL for the whole project, shared across its editions and project
+stored in PostgreSQL for the whole project, shared across its campaigns and project
 members, and restored on later visits. Revision checks prevent overwriting another
 member's recipient edits or sending to a list changed since you loaded it;
 reload the project if a conflict is reported. Saving an
@@ -115,27 +119,27 @@ recipients' addresses are not exposed. The HTML uses the same renderer as the
 public permalink. Tests are limited to five sends per user and per project per
 minute. Success means SMTP acceptance, not confirmed inbox delivery. Partial or
 failed deliveries produce explicit errors; check SMTP logs before retrying because
-some recipients may already have received the test. Tests do not send campaigns.
+some recipients may already have received the test. Tests do not send full campaigns.
 
 ### Live HTML permalinks for Mailchimp
 
-Save an edition to create its **Public HTML permalink**, available in the edition's
+Save a campaign to create its **Public HTML permalink**, available in the campaign's
 **Test & publish** tab. Use **Copy link**, **Open HTML**, or **Download HTML**.
-The Content, Settings, and Edition images tabs keep these controls out of the
-editing area. Breadcrumbs show the current project and edition; click the project
-to return to its editions overview without discarding drafts. Edition save status
+The Content, Settings, and Campaign images tabs keep these controls out of the
+editing area. Breadcrumbs show the current project and campaign; click the project
+to return to its campaigns overview without discarding drafts. Campaign save status
 and the save button are in the header beside the breadcrumbs.
 The URL ends in `.html` and has its own random identifier, independent of the
-edition id. It remains the same across saves; clones receive separate links.
+campaign id. It remains the same across saves; clones receive separate links.
 Unsaved drafts have no public link.
 
-The permalink renders the latest saved edition content, UTM settings, and
+The permalink renders the latest saved campaign content, UTM settings, and
 project templates on every request. Unsaved edits do not affect it. Responses
 are ordinary UTF-8 HTML with caching disabled, so Mailchimp can fetch the same
 URL again for updates. No sign-in, publish step, or snapshot is required.
 Invalid saved MJML or missing template placeholders produce an explicit error
-instead of serving stale HTML. HTML fetches are limited to 240 per edition
-per minute. Deleting an edition makes its permalink return 404.
+instead of serving stale HTML. HTML fetches are limited to 240 per campaign
+per minute. Deleting a campaign makes its permalink return 404.
 
 Mailchimp needs an internet-accessible deployment URL, normally HTTPS.
 `127.0.0.1` and `localhost` URLs work only for local testing and cannot be
@@ -436,10 +440,14 @@ alter newsletter content, templates, image files, or newsletter HTML exports.
 Concurrent settings edits use revision checks. **Restore defaults** fills in
 the original branding; save to apply it.
 
-**Base color** controls the overall interface palette (backgrounds, panels,
-borders, and text). **Accent color** is used for primary buttons and the
-application logo, with automatically contrasting button text. Both colors
-appear in the live branding preview. Upgrading from the single-color setting
+The interface follows a **60/30/10 visual hierarchy**: 60% neutral workspace
+surfaces, panels, borders, and readable text; 30% **Base color** through subtly
+tinted navigation, selected states, and brand text; and 10% **Accent color**
+for primary actions, logo details, and keyboard focus. These are visual-weight
+guidelines, not fixed pixel quotas across every screen size. Primary-button text
+automatically contrasts with the accent. Both colors appear in the live branding
+preview, and the same neutral-led palette applies to default and custom colors.
+Upgrading from the single-color setting
 initializes both colors to the previously saved interface color.
 
 ### Account email and user management
@@ -522,64 +530,64 @@ a targeted cookie dependency override supplies its patched serializer.
 
 ## Newsletter data and templates
 
-Selecting a project opens an **Editions** overview table with edition names,
+Selecting a project opens a **Campaigns** overview table with campaign names,
 item counts, save status, and last-saved times. Search by name and sort by name
 or saved time to manage larger sets of variations. Click **Open** to edit an
-edition; **All editions** returns to the overview without discarding drafts.
-Project views show **Editions**, **Templates**, and **Project images**.
-Opening an edition shows only **Content**, **Settings**, and **Edition images**.
+campaign; clicking the project breadcrumb returns to the overview without discarding drafts.
+Project views show **Campaigns**, **Templates**, and **Project images**.
+Opening a campaign shows **Content**, **Settings**, **Campaign images**, and **Test & publish**.
 Its HTML permalink is visible above those views. Returning
-with **All editions** restores the project views and keeps unsaved draft edits.
+via the project breadcrumb restores the project views and keeps unsaved draft edits.
 The assembled **MJML** source tab is not shown; template editing remains available.
 
-### Edition UTM link tracking
+### Campaign UTM link tracking
 
-Open an edition and use its **Settings** tab to enter **utm_source**, **utm_medium**,
-**utm_campaign**, and **utm_term**, then click **Save edition settings**.
-New editions start with blank values (tracking disabled).
+Open a campaign and use its **Settings** tab to enter **utm_source**, **utm_medium**,
+**utm_campaign**, and **utm_term**, then click **Save campaign settings**.
+New campaigns start with blank values (tracking disabled).
 For example, `mail`, `mail`, `nieuwsbrief`, and `october_26` produce
 `?utm_source=mail&utm_medium=mail&utm_campaign=nieuwsbrief&utm_term=october_26`.
 Values are editable text up to 200 characters and are URL-encoded.
 
 Filled values replace the corresponding UTM parameters on HTTP(S) hyperlinks
-throughout that edition, including literal template links and links
-from edition fields. Other query parameters and URL fragments are preserved.
+throughout that campaign, including literal template links and links
+from campaign fields. Other query parameters and URL fragments are preserved.
 Blank fields leave existing parameters unchanged. Image URLs, image sources,
 mailto links, relative links, and anchor links are unchanged. Both preview and
 live HTML exports include tracking; newsletter data and original
 templates retain their original URLs.
-Saving edition settings also saves pending content changes in that edition,
-using its revision check. Other editions keep their own independent values.
-UTM settings are included in edition JSON exports and copied independently
+Saving campaign settings also saves pending content changes in that campaign,
+using its revision check. Other campaigns keep their own independent values.
+UTM settings are included in campaign JSON exports and copied independently
 when cloning. Upgrading from project-level UTM settings carries the project's
-saved values into its existing editions.
+saved values into its existing campaigns.
 
-Use **Delete** in the editions table or **Delete edition** in the editor.
-Deletion requires confirmation and discards the edition's content and unsaved
-changes. Unsaved editions are discarded locally; saved editions are removed
+Use **Delete** in the campaigns table.
+Deletion requires confirmation and discards the campaign's content and unsaved
+changes. Unsaved campaigns are discarded locally; saved campaigns are removed
 from the workspace with a revision check, and their HTML permalinks return 404.
-Unused edition-only images are permanently removed; images used by clones,
+Unused campaign-only images are permanently removed; images used by clones,
 other current saved content or templates are retained. Project images are
 not removed. Save or discard dependent unsaved clones and image references
-before deleting their source edition.
+before deleting their source campaign.
 If physical image cleanup fails, the error is explicit: retry deletion before
 reloading, or contact an administrator. Deletion markers and association history
 are retained internally for history and cleanup retries.
 
-Click **Clone** in a table row (or **Clone edition** in the editor), choose a new
-name, and confirm **Clone newsletter**. The copy includes current content,
+Click **Clone** in a table row, choose a new
+name, and confirm **Clone campaign**. The copy includes current content,
 newsletter/item custom fields, item order, and selected images, including any
 unsaved edits in the source. It gets fresh newsletter and item ids and timestamps.
-It is a new unsaved draft: use **Save newsletter** to persist it. On its first
-save, the clone gets its own associations to the source edition's image library,
+It is a new unsaved draft: use **Save campaign** to persist it. On its first
+save, the clone gets its own associations to the source campaign's image library,
 reusing stored files and keeping their URLs unchanged. Later uploads remain
-specific to their destination edition; they do not appear in existing clones.
+specific to their destination campaign; they do not appear in existing clones.
 Editing the copy does not change the source. Project templates remain shared
 and the clone gets its own HTML permalink when saved.
 
-Choose a project, click **New newsletter**, and give the edition a name. Each
-edition has its own ordered list of items. Add, edit, remove, or reorder items
-without changing other editions or the project templates. All content inputs
+Choose a project, click **New campaign**, and give the campaign a name. Each
+campaign has its own ordered list of items. Add, edit, remove, or reorder items
+without changing other campaigns or the project templates. All content inputs
 come from typed placeholders in the project template and item snippet.
 
 Place exactly one `{{items}}` inside `mj-body` in the project template, where your
@@ -643,7 +651,7 @@ newsletter `fields` map and a required `fields` map on each item, including JSON
 and rendered HTML exports. Changing or removing a tag does not delete its saved
 value; restoring the tag restores the input. Renaming a tag creates a new field.
 Items contain only `id` and `fields` in the editor. Legacy item properties are
-ignored when loading saved editions; items without a `fields`
+ignored when loading saved campaigns; items without a `fields`
 map start with an empty one, and existing typed values are preserved. Legacy
 properties are not copied into typed values and are omitted from subsequent
 saves and exports. Invalid typed field maps still produce an explicit error.
@@ -652,7 +660,7 @@ a template validation error, but do not prevent opening the project to update
 its template. No automatic content migration or legacy editor is provided.
 The structural template tokens `{{items}}`
 and `{{newsletter_name}}` remain supported. Newsletter names are edited in
-edition **Settings**, not in either content editor layout.
+campaign **Settings**, not in either content editor layout.
 For example:
 
 ```xml
@@ -674,7 +682,7 @@ Unknown placeholders, invalid fields, and missing template slots are shown as
 preview errors. The preview updates automatically as you edit, and the MJML view
 shows the assembled source.
 
-**Save newsletter** persists the edition in PostgreSQL. **Export JSON** in Test & publish downloads
+**Save campaign** persists the campaign in PostgreSQL. **Export JSON** in Test & publish downloads
 versioned data containing all fields, item order, ids, and timestamps. JSON parsing
 and serialization remain available for future import workflows, but there is no
 newsletter import control in the current workspace.

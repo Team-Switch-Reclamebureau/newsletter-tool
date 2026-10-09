@@ -44,7 +44,7 @@
 {/if}
 
 <style>
-	aside, dialog { flex-direction: column; width: 250px; height: 100dvh; flex-shrink: 0; background: var(--ui-soft, #eef0e9); color: var(--ui-text, #25382d); border: 0; border-right: 1px solid var(--ui-border, #dce1d6); padding: 32px 20px 22px; }
+	aside, dialog { box-sizing: border-box; flex-direction: column; width: 260px; height: 100dvh; flex-shrink: 0; background: var(--ui-sidebar, #f4f5f7); color: var(--ui-text, #25382d); border: 0; border-right: 1px solid var(--ui-border, #dce1d6); padding: 32px 20px 22px; }
 	aside { position: sticky; top: 0; align-self: flex-start; display: flex; }
 	aside > :global(*), dialog > :global(*) { flex-shrink: 0; }
 	aside > :global(nav), dialog > :global(nav) { flex-shrink: 1; }

@@ -14,15 +14,15 @@ export async function renderSavedNewsletter(row: SavedNewsletterSource, id: stri
 	try { newsletter = parseNewsletter(JSON.stringify(row.content)); }
 	catch (cause) {
 		console.error('Saved newsletter content validation failed:', id, cause);
-		error(422, `The saved edition cannot be exported: ${cause instanceof Error ? cause.message : 'Invalid newsletter content.'}`);
+		error(422, `The saved campaign cannot be exported: ${cause instanceof Error ? cause.message : 'Invalid newsletter content.'}`);
 	}
 	const composed = composeNewsletter(row.template, row.item_template, newsletter);
-	if (composed.error) error(422, `The saved edition cannot be exported: ${composed.error}`);
+	if (composed.error) error(422, `The saved campaign cannot be exported: ${composed.error}`);
 	let rendered;
 	try { rendered = await renderTemplate(composed.source, newsletter.utm); }
 	catch (cause) {
 		console.error('Saved newsletter HTML rendering failed:', id, cause);
-		error(422, cause instanceof UtmLinkError ? cause.message : 'The saved edition cannot be rendered. Fix its template and save again.');
+		error(422, cause instanceof UtmLinkError ? cause.message : 'The saved campaign cannot be rendered. Fix its template and save again.');
 	}
 	if (rendered.errors.length) error(422, `Fix the saved MJML validation warnings: ${rendered.errors.map((item) => item.message).join('; ')}`);
 	return { newsletter, html: rendered.html };

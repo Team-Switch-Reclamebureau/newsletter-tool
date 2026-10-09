@@ -20,9 +20,9 @@ export const DELETE = api(async (event) => {
 		if (!asset || asset.scope !== (newsletterId ? 'edition' : 'project')) error(404, 'Image not found in this library.');
 		if (newsletterId) {
 			const association = await client.query('SELECT 1 FROM newsletter_images WHERE project_id = $1 AND newsletter_id = $2 AND image_asset_id = $3', [projectId, newsletterId, assetId]);
-			if (!association.rowCount) error(404, 'Image not found in this edition library.');
+			if (!association.rowCount) error(404, 'Image not found in this campaign library.');
 		}
-		if (await imageInUse(client, assetId)) error(409, 'This image is used by a current saved edition or template and cannot be deleted.');
+		if (await imageInUse(client, assetId)) error(409, 'This image is used by a current saved campaign or template and cannot be deleted.');
 		if (newsletterId) {
 			await client.query('UPDATE newsletter_images SET removed_at = coalesce(removed_at, now()) WHERE newsletter_id = $1 AND image_asset_id = $2', [newsletterId, assetId]);
 			const remaining = await client.query('SELECT 1 FROM newsletter_images WHERE image_asset_id = $1 AND removed_at IS NULL LIMIT 1', [assetId]);
@@ -40,6 +40,6 @@ export const DELETE = api(async (event) => {
 	}
 	return json({
 		fileDeleted,
-		message: fileDeleted ? 'Unused image deleted permanently.' : 'Image removed from this edition library. Other edition libraries still use the stored file.'
+		message: fileDeleted ? 'Unused image deleted permanently.' : 'Image removed from this campaign library. Other campaign libraries still use the stored file.'
 	});
 });

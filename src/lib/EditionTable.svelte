@@ -34,50 +34,50 @@
 	}
 </script>
 
-<section class="editions-panel" aria-label="Edition overview">
+<section class="editions-panel" aria-label="Campaign overview">
 	<div class="table-heading">
-		<div><h2>Newsletter editions</h2><p>Open an edition to edit it, or clone it to create a new variation.</p></div>
-		<span>{editions.length} {editions.length === 1 ? 'edition' : 'editions'}</span>
+		<div><h2>Campaigns</h2><p>Open a campaign to edit it, or clone it to create a new variation.</p></div>
+		<span>{editions.length} {editions.length === 1 ? 'campaign' : 'campaigns'}</span>
 	</div>
 	{#if editions.length}
 		<div class="table-controls">
-			<div class="control"><label for="edition-search">Search editions</label><input id="edition-search" type="search" bind:value={search} placeholder="Search by name" /></div>
-			<div class="control"><label for="edition-sort">Sort editions</label><select id="edition-sort" bind:value={sort}>
+			<div class="control"><label for="edition-search">Search campaigns</label><input id="edition-search" type="search" bind:value={search} placeholder="Search by name" /></div>
+			<div class="control"><label for="edition-sort">Sort campaigns</label><select id="edition-sort" bind:value={sort}>
 				<option value="updated-desc">Recently saved first</option>
 				<option value="updated-asc">Oldest saved first</option>
 				<option value="name-asc">Name A-Z</option>
 				<option value="name-desc">Name Z-A</option>
 			</select></div>
-			<p role="status">Showing {visible.length} of {editions.length} editions</p>
+			<p role="status">Showing {visible.length} of {editions.length} campaigns</p>
 		</div>
-		<div class="table-scroll" role="region" aria-label="Editions table">
-			<table aria-label="Newsletter editions">
-				<thead><tr><th scope="col">Edition</th><th scope="col">Save status</th><th scope="col">Last saved</th><th scope="col">Actions</th></tr></thead>
+		<div class="table-scroll" role="region" aria-label="Campaigns table">
+			<table aria-label="Campaigns">
+				<thead><tr><th scope="col">Campaign</th><th scope="col">Save status</th><th scope="col">Last saved</th><th scope="col">Actions</th></tr></thead>
 				<tbody>
 					{#each visible as entry (entry.newsletter.id)}
 						<tr>
-							<td class="edition-name">{entry.newsletter.name || 'Untitled newsletter'}{#if entry.error}<p class="save-error" role="alert">{entry.error}</p>{/if}</td>
+							<td class="edition-name">{entry.newsletter.name || 'Untitled campaign'}{#if entry.error}<p class="save-error" role="alert">{entry.error}</p>{/if}</td>
 							<td><span class="status" class:pending={status(entry) !== 'Saved'}>{status(entry)}</span></td>
 							<td>{#if entry.revision}<time datetime={entry.newsletter.updatedAt}>{new Date(entry.newsletter.updatedAt).toLocaleString()}</time>{:else}Not saved yet{/if}</td>
 							<td><div class="row-actions">
-								<button onclick={() => onOpen(entry.newsletter.id)} disabled={deletingId === entry.newsletter.id} aria-label={`Open edition ${entry.newsletter.name || 'Untitled newsletter'}`}>Open</button>
-								<button onclick={() => onClone(entry.newsletter.id)} disabled={entry.saving || deletingId === entry.newsletter.id} aria-label={`Clone edition ${entry.newsletter.name || 'Untitled newsletter'}`}>Clone</button>
-								<button class="delete" onclick={() => onDelete(entry.newsletter.id)} disabled={deletionDisabled || entry.saving} aria-label={`Delete edition ${entry.newsletter.name || 'Untitled newsletter'}`}>{deletingId === entry.newsletter.id ? 'Deleting...' : 'Delete'}</button>
+								<button onclick={() => onOpen(entry.newsletter.id)} disabled={deletingId === entry.newsletter.id} aria-label={`Open campaign ${entry.newsletter.name || 'Untitled campaign'}`}>Open</button>
+								<button onclick={() => onClone(entry.newsletter.id)} disabled={entry.saving || deletingId === entry.newsletter.id} aria-label={`Clone campaign ${entry.newsletter.name || 'Untitled campaign'}`}>Clone</button>
+								<button class="delete" onclick={() => onDelete(entry.newsletter.id)} disabled={deletionDisabled || entry.saving} aria-label={`Delete campaign ${entry.newsletter.name || 'Untitled campaign'}`}>{deletingId === entry.newsletter.id ? 'Deleting...' : 'Delete'}</button>
 							</div></td>
 						</tr>
 					{:else}
-						<tr><td colspan="4" class="empty">No editions match your search. <button onclick={() => search = ''}>Clear search</button></td></tr>
+						<tr><td colspan="4" class="empty">No campaigns match your search. <button onclick={() => search = ''}>Clear search</button></td></tr>
 					{/each}
 				</tbody>
 			</table>
 		</div>
 	{:else}
-		<p class="empty">No editions yet. Click New newsletter to create your first edition.</p>
+		<p class="empty">No campaigns yet. Click New campaign to create your first campaign.</p>
 	{/if}
 </section>
 
 <style>
-	.editions-panel { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 9px; overflow: hidden; }
+	.editions-panel { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); overflow: hidden; }
 	.table-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px; border-bottom: 1px solid var(--ui-border, #e1e8d8); }
 	h2 { font: 600 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: var(--ui-text, #34492c); }
 	p { color: var(--ui-muted, #7a886e); font-size: 12px; line-height: 1.8; margin: 8px 0 0; }

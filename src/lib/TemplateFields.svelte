@@ -30,8 +30,8 @@
 {#if onImageUpload && fields.some((field) => field.type === 'image')}
 	<label for={`${prefix}-upload-scope`}>Upload new images to</label>
 	<select id={`${prefix}-upload-scope`} bind:value={uploadScope} disabled={imageUploading || uploading !== null}>
-		<option value="project">Project (available in every edition)</option>
-		<option value="edition" disabled={!canUploadEditionImages}>This edition{canUploadEditionImages ? '' : ' (save first)'}</option>
+		<option value="project">Project (available in every campaign)</option>
+		<option value="edition" disabled={!canUploadEditionImages}>This campaign{canUploadEditionImages ? '' : ' (save first)'}</option>
 	</select>
 {/if}
 {#if uploadError}<p class="upload-error" role="alert">{uploadError}</p>{/if}
@@ -47,7 +47,7 @@
 		<select id={`${prefix}-field-${field.name}-asset`} disabled={!assets.length} aria-describedby={!assets.length ? `${prefix}-field-${field.name}-hint` : undefined} value={assets.some((asset) => asset.url === fieldValue(values, field.name)) ? fieldValue(values, field.name) : ''} onchange={(event) => onUpdate(field.name, event.currentTarget.value)}>
 			<option value="">{assets.length ? 'No uploaded image selected' : 'No uploaded images yet'}</option>
 			{#each ['project', 'edition'] as scope}
-				<optgroup label={scope === 'project' ? 'Project images' : 'Edition images'}>
+				<optgroup label={scope === 'project' ? 'Project images' : 'Campaign images'}>
 					{#each assets.filter((asset) => asset.scope === scope) as asset (asset.id)}<option value={asset.url}>{asset.filename}</option>{/each}
 				</optgroup>
 			{/each}

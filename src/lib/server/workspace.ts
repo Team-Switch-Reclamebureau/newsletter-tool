@@ -79,7 +79,7 @@ export function newsletterInput(value: unknown): Newsletter {
 
 export async function requireNewsletter(database: Database, projectId: string, newsletterId: string) {
 	const result = await database.query<NewsletterRow>('SELECT id, content, revision FROM newsletters WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL', [newsletterId, projectId]);
-	if (!result.rows[0]) error(404, 'The edition was not found in this project. Save the edition before uploading edition images.');
+	if (!result.rows[0]) error(404, 'The campaign was not found in this project. Save the campaign before uploading campaign images.');
 	return result.rows[0];
 }
 
@@ -133,7 +133,7 @@ export async function resolveAssets(database: Database, projectId: string, newsl
 		const id = url.origin === origin ? url.pathname.match(/^\/media\/([^/]+)\.webp$/)?.[1] : undefined;
 		if (!id || !UUID_PATTERN.test(id)) return value;
 		const asset = available.get(id.toLowerCase());
-		if (!asset) error(400, 'Choose a project image or an image belonging to this edition.');
+		if (!asset) error(400, 'Choose a project image or an image belonging to this campaign.');
 		return asset.url;
 	}
 	function resolveFields(fields: Newsletter['fields']) {

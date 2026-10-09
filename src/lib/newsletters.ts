@@ -54,8 +54,8 @@ function isItem(value: unknown): value is { id: string; fields?: FieldValues } {
 }
 
 export function newsletterError(newsletter: Newsletter): string | null {
-	if (!newsletter.name.trim()) return 'Give this newsletter a name.';
-	if (newsletter.name.length > 160) return 'Keep the newsletter name within 160 characters.';
+	if (!newsletter.name.trim()) return 'Give this campaign a name.';
+	if (newsletter.name.length > 160) return 'Keep the campaign name within 160 characters.';
 	try { parseUtm(newsletter.utm); }
 	catch (cause) { return cause instanceof Error ? cause.message : 'Invalid UTM settings.'; }
 	return null;

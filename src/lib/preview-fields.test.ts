@@ -18,6 +18,13 @@ function fixture() {
 }
 
 describe('editable preview fields', () => {
+	it('labels campaign fields without changing their internal edition identities', () => {
+		const { fields } = fixture();
+		const field = fields.find((field) => field.itemId === null && field.name === 'heading');
+		expect(field?.label).toBe('Campaign / heading');
+		expect(field?.id).toMatch(/^newsletter-field-edition-/);
+	});
+
 	it('keeps edition and item identities separate and stable across reorders', () => {
 		const { newsletter, fields } = fixture();
 		const before = fields.map((field) => [field.itemId, field.name, field.id]);

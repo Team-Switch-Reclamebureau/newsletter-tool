@@ -26,7 +26,7 @@ export function previewFields(template: string, snippet: string | null, newslett
 			});
 		}
 	}
-	add(template, null, 'Edition');
+	add(template, null, 'Campaign');
 	for (const [index, item] of newsletter.items.entries()) {
 		add(snippet ?? DEFAULT_ITEM_SNIPPET, item.id, `Item ${index + 1}`);
 	}

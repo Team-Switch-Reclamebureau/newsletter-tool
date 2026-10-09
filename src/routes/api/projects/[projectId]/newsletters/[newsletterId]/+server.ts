@@ -39,7 +39,7 @@ export const DELETE = api(async (event) => {
 		await requireProject(client, projectId, user.id, true);
 		const current = await client.query<NewsletterRow>('SELECT id, content, revision FROM newsletters WHERE id = $1 AND project_id = $2 FOR UPDATE', [id, projectId]);
 		if (!current.rows[0]) error(404, 'Newsletter not found.');
-		if (current.rows[0].revision !== expected) error(409, 'This edition changed elsewhere. Reload before deleting.');
+		if (current.rows[0].revision !== expected) error(409, 'This campaign changed elsewhere. Reload before deleting.');
 		await client.query('UPDATE newsletters SET deleted_at = coalesce(deleted_at, now()) WHERE id = $1', [id]);
 		await client.query('UPDATE newsletter_images SET removed_at = coalesce(removed_at, now()) WHERE newsletter_id = $1 AND project_id = $2', [id, projectId]);
 		const assets = await client.query<{ id: string }>(`
@@ -60,8 +60,8 @@ export const DELETE = api(async (event) => {
 		try { await storage.removePermanent(assetId); }
 		catch (cause) {
 			console.error('Could not remove deleted edition image:', id, assetId, cause);
-			error(500, 'The edition was deleted, but image cleanup failed. Retry Delete edition to finish cleanup or contact your administrator.');
+			error(500, 'The campaign was deleted, but image cleanup failed. Retry Delete campaign to finish cleanup or contact your administrator.');
 		}
 	}
-	return json({ deletedAssetIds, message: 'Edition deleted. Its HTML permalink is no longer available; unused edition images were removed.' });
+	return json({ deletedAssetIds, message: 'Campaign deleted. Its HTML permalink is no longer available; unused campaign images were removed.' });
 });

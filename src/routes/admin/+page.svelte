@@ -70,13 +70,14 @@
 				<input id="application-name" bind:value={applicationName} maxlength="80" required />
 				<label for="base-color">Base color</label>
 				<div class="color-control"><input id="base-color" type="color" bind:value={baseColor} /><output for="base-color">{baseColor}</output></div>
-				<p>Sets the palette for backgrounds, panels, borders, and interface text.</p>
+				<p>The 30% brand layer: subtly tinted navigation, selected states, and brand text. Main surfaces stay neutral.</p>
 				<label for="accent-color">Accent color</label>
 				<div class="color-control"><input id="accent-color" type="color" bind:value={accentColor} /><output for="accent-color">{accentColor}</output></div>
-				<p>Used for primary buttons and the application logo. Button text automatically adjusts for contrast.</p>
+				<p>The 10% accent layer: primary buttons, logo details, and focus indicators. Button text automatically adjusts for contrast.</p>
 				<p>Changes affect the interface only, not newsletter templates or exported emails.</p>
 				<div class="branding-preview" style={interfaceTheme(baseColor, accentColor)} aria-label="Branding preview">
-					<strong>{applicationName || 'Application name'}</strong><button type="button" disabled>Primary button</button>
+					<div class="preview-navigation"><strong>{applicationName || 'Application name'}<span>.</span></strong><span class="preview-selected">Workspace</span></div>
+					<div class="preview-content"><span>Neutral workspace</span><button type="button" disabled>Primary button</button></div>
 				</div>
 				<div class="actions"><button type="submit" disabled={!brandingDirty}>{saving ? 'Saving…' : 'Save settings'}</button><button class="secondary" type="button" onclick={reset}>Restore defaults</button></div>
 			</fieldset>
@@ -91,12 +92,12 @@
 	main { max-width: 840px; margin: auto; padding: 30px 24px; }
 	header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--ui-border, #dce2d4); margin-bottom: 30px; }
 	a { color: var(--ui-text, #526348); font-size: 12px; }
-	.brand { font-size: 29px; font-weight: 750; letter-spacing: -1px; text-decoration: none; overflow-wrap: anywhere; color: var(--ui-accent, #425f30); }
+	.brand { font-size: 29px; font-weight: 750; letter-spacing: -1px; text-decoration: none; overflow-wrap: anywhere; color: var(--ui-base-ink, #425f30); }
 	.brand span { color: var(--ui-accent, #839e5d); }
-	h1 { font-family: Georgia, serif; font-size: 32px; font-weight: 400; }
+	h1 { font-size: 32px; font-weight: 650; letter-spacing: -1px; }
 	h2 { font-size: 16px; margin-top: 0; }
 	p { font-size: 12px; line-height: 1.8; color: var(--ui-muted, #78886b); }
-	section { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 9px; padding: 24px; margin-top: 20px; }
+	section { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); padding: 24px; margin-top: 20px; }
 	fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 	label { display: block; font-size: 12px; font-weight: 600; margin: 18px 0 8px; }
 	input { box-sizing: border-box; font: inherit; color: var(--ui-text, #34492c); background: white; border: 1px solid var(--ui-border, #d4dec8); border-radius: 5px; padding: 10px; max-width: 100%; }
@@ -104,8 +105,12 @@
 	input[type="color"] { width: 65px; height: 42px; padding: 4px; cursor: pointer; }
 	.color-control, .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 	output { font-size: 12px; color: var(--ui-muted, #78886b); }
-	.branding-preview { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--ui-soft, #eef3e6); border: 1px solid var(--ui-border, #dce2d4); padding: 18px; border-radius: 6px; margin: 20px 0; overflow-wrap: anywhere; }
-	.branding-preview strong { color: var(--ui-accent, #425f30); }
+	.branding-preview { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 7fr); background: var(--ui-bg); color: var(--ui-text); border: 1px solid var(--ui-border); border-radius: 10px; margin: 20px 0; overflow: hidden; overflow-wrap: anywhere; }
+	.preview-navigation { display: flex; flex-direction: column; gap: 20px; background: var(--ui-sidebar); padding: 20px 14px; border-right: 1px solid var(--ui-border); }
+	.preview-selected { background: var(--ui-active); color: var(--ui-base-ink); padding: 9px; border-radius: 6px; font-size: 12px; }
+	.preview-content { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 24px; font-size: 13px; }
+	.branding-preview strong { color: var(--ui-base-ink); }
+	.branding-preview strong span { color: var(--ui-accent); }
 	.branding-preview button { opacity: 1; }
 	button { font: inherit; font-size: 12px; border: 0; padding: 11px 16px; border-radius: 5px; cursor: pointer; background: var(--ui-primary, #425f30); color: var(--ui-on-primary, white); }
 	button.secondary { background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); border: 1px solid var(--ui-border, #d3ddc8); }

@@ -62,7 +62,7 @@
 						{#each fields as field (field.id)}<option value={field.id}>{field.label} ({field.type})</option>{/each}
 					</select>
 					<TemplateFields fields={[selected]} values={{ [selected.name]: previewFieldValue(newsletter, selected) }} prefix="dynamic" {assets} {imageUploading} {canUploadEditionImages} onUpdate={(_name, value) => update(selected.id, value)} onImageUpload={selected.itemId !== null ? uploadSelectedImage : undefined} />
-					{#if selected.type === 'image' && selected.itemId === null}<p>Upload new edition-level images in the Images tabs, then select them here.</p>{/if}
+					{#if selected.type === 'image' && selected.itemId === null}<p>Upload new campaign-level images in the Images tabs, then select them here.</p>{/if}
 				{:else}
 					<p>No editable fields yet. Use All fields & items to add an item, or add placeholders in the project template.</p>
 				{/if}
@@ -84,7 +84,7 @@
 	.mode-toolbar > span { font-size: 11px; color: var(--ui-muted, #718161); }
 	.content-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; align-items: start; }
 	.dynamic { grid-template-columns: minmax(260px, .65fr) minmax(0, 1.5fr); }
-	.editor-panel { min-width: 0; border: 1px solid var(--ui-border, #dce2d4); border-radius: 9px; background: var(--ui-surface, #fcfdfb); overflow: hidden; }
+	.editor-panel { min-width: 0; border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); background: var(--ui-surface, #fcfdfb); overflow: hidden; }
 	.panel-toolbar { display: flex; justify-content: space-between; align-items: center; height: 58px; padding: 14px 18px; border-bottom: 1px solid var(--ui-border, #e1e8d8); }
 	h2 { font-size: 12px; margin: 0; }
 	.all-fields { padding: 6px; background: var(--ui-soft, #f2f5ec); }

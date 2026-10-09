@@ -12,7 +12,7 @@ export const POST = api(async (event) => {
 	const newsletterId = uuid(event.params.newsletterId);
 	await requireProject(pool, projectId, user.id);
 	const body = await readJson(event.request);
-	if (Object.keys(body).some((key) => key !== 'recipientsRevision')) error(400, 'Test emails use the saved edition and project recipient list; do not send draft content or recipients.');
+	if (Object.keys(body).some((key) => key !== 'recipientsRevision')) error(400, 'Test emails use the saved campaign and project recipient list; do not send draft content or recipients.');
 	const expectedRecipients = revision(body.recipientsRevision);
 	const result = await pool.query<SavedNewsletterSource & { recipients: string[]; recipients_revision: number; public_id: string }>(`
 		SELECT n.content, n.public_id, p.template, p.item_template,
@@ -21,7 +21,7 @@ export const POST = api(async (event) => {
 		LEFT JOIN project_test_recipients r ON r.project_id = p.id
 		WHERE n.id = $1 AND n.project_id = $2 AND n.deleted_at IS NULL`, [newsletterId, projectId]);
 	const row = result.rows[0];
-	if (!row) error(404, 'Save this edition before sending a test email.');
+	if (!row) error(404, 'Save this campaign before sending a test email.');
 	if (row.recipients_revision !== expectedRecipients) error(409, 'Test recipients changed elsewhere. Reload the project before sending to the updated list.');
 	let recipients: string[];
 	try { recipients = parseTestRecipients(row.recipients.join(', ')); }
@@ -35,7 +35,7 @@ export const POST = api(async (event) => {
 	let delivery;
 	try {
 		delivery = await sendNewsletterTest(pool, config.authSecret, recipients, `[Test] ${rendered.newsletter.name}`,
-			`Test email for "${rendered.newsletter.name}".\n\nView the latest saved edition:\n${newsletterHtmlUrl(config.origin, row.public_id)}`, rendered.html);
+			`Test email for "${rendered.newsletter.name}".\n\nView the latest saved campaign:\n${newsletterHtmlUrl(config.origin, row.public_id)}`, rendered.html);
 	} catch (cause) {
 		console.error('Newsletter test SMTP setup failed:', cause instanceof Error ? cause.message : 'Unknown delivery error');
 		error(503, 'The test email could not be sent. Check the saved SMTP settings and server logs.');
