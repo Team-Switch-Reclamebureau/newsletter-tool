@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const fixtures: string[] = [];
 
-function runUpdate(options: { tag?: string; dirty?: boolean; divergent?: boolean; failure?: string; unhealthy?: boolean; sudo?: boolean } = {}) {
+function runUpdate(options: { tag?: string; dirty?: boolean; divergent?: boolean; failure?: string; unhealthy?: boolean; sudo?: boolean; umask?: string } = {}) {
 	const root = mkdtempSync(join(tmpdir(), 'postroom-update-test-'));
 	fixtures.push(root);
 	const repo = join(root, 'repo');
@@ -23,6 +23,11 @@ case "$1" in
   status) if [[ "$TEST_DIRTY" == 1 ]]; then echo ' M compose.yaml'; fi ;;
   rev-parse) echo abc123 ;;
   merge-base) if [[ "$TEST_DIVERGENT" == 1 ]]; then exit 1; fi ;;
+  switch|merge)
+    mkdir -p "$TEST_REPO/new-migrations"
+    echo fixture > "$TEST_REPO/new-migrations/new.sql"
+    echo fixture > "$TEST_REPO/package.json"
+    ;;
 esac
 `, { mode: 0o755 });
 	writeFileSync(join(bin, 'docker'), `#!/usr/bin/env bash
@@ -44,7 +49,7 @@ echo "sudo $*" >> "$TEST_LOG"
 if [[ "$1" == -v ]]; then exit 0; fi
 VIA_SUDO=1 "$@"
 `, { mode: 0o755 });
-	const result = spawnSync('bash', [join(repo, 'scripts/update-vps.sh'), ...(options.tag ? [options.tag] : [])], {
+	const result = spawnSync('bash', ['-c', 'umask "$1"; shift; exec bash "$@"', '--', options.umask ?? '0022', join(repo, 'scripts/update-vps.sh'), ...(options.tag ? [options.tag] : [])], {
 		encoding: 'utf8',
 		env: {
 			...process.env,
@@ -53,6 +58,7 @@ VIA_SUDO=1 "$@"
 			POSTROOM_BACKUP_DIR: backups,
 			TEST_LOG: join(root, 'commands.log'),
 			TEST_IMAGES: join(root, 'images'),
+			TEST_REPO: repo,
 			TEST_DIRTY: options.dirty ? '1' : '0',
 			TEST_DIVERGENT: options.divergent ? '1' : '0',
 			TEST_FAILURE: options.failure ?? '',
@@ -60,7 +66,7 @@ VIA_SUDO=1 "$@"
 			TEST_SUDO: options.sudo ? '1' : '0'
 		}
 	});
-	return { result, backups, commands: readFileSync(join(root, 'commands.log'), 'utf8') };
+	return { result, backups, repo, commands: readFileSync(join(root, 'commands.log'), 'utf8') };
 }
 
 afterEach(() => {
@@ -94,6 +100,30 @@ describe('VPS updater', () => {
 		expect(commands).toContain('git switch --detach refs/tags/v1.2.3');
 		expect(commands).toContain('sudo docker compose');
 		expect(commands).not.toContain('sudo git');
+	});
+
+	it.each([
+		{ umask: '0022', fileMode: 0o644, directoryMode: 0o755 },
+		{ umask: '0027', fileMode: 0o640, directoryMode: 0o750 }
+	])('keeps backups private and restores checkout permissions for umask $umask', ({ umask, fileMode, directoryMode }) => {
+		const { result, backups, repo } = runUpdate({ umask });
+		expect(result.status, result.stderr).toBe(0);
+		const backup = join(backups, readdirSync(backups)[0]);
+		expect(statSync(backup).mode & 0o777).toBe(0o700);
+		for (const file of readdirSync(backup)) expect(statSync(join(backup, file)).mode & 0o777).toBe(0o600);
+		expect(statSync(join(repo, 'package.json')).mode & 0o777).toBe(fileMode);
+		expect(statSync(join(repo, 'new-migrations/new.sql')).mode & 0o777).toBe(fileMode);
+		expect(statSync(join(repo, 'new-migrations')).mode & 0o777).toBe(directoryMode);
+	});
+
+	it('prints migration logs and the backup location when Compose deployment fails', () => {
+		const { result, commands, backups } = runUpdate({ failure: 'up -d --build' });
+		expect(result.status).not.toBe(0);
+		expect(commands).toContain('logs --no-color --tail=100 migrate app');
+		expect(result.stdout).not.toContain('Update complete');
+		expect(result.stderr).toContain(`Backup directory: ${join(backups, readdirSync(backups)[0])}`);
+		expect(result.stderr).toContain('No automatic rollback');
+		expect(readdirSync(backups)).not.toContain('.update-lock');
 	});
 
 	it.each([{ dirty: true }, { divergent: true }])('rejects unsafe source updates before stopping the app: %s', (options) => {

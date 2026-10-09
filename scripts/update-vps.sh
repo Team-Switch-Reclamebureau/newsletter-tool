@@ -7,7 +7,7 @@ main() {
     return 1
   fi
 
-  local repo target previous backup lock app_id state attempt
+  local repo target previous backup lock app_id state attempt original_umask
   local env_file="${POSTROOM_ENV_FILE:-.env}"
   local backup_root="${POSTROOM_BACKUP_DIR:-$HOME/backups/postroom}"
   local -a docker_command=(docker) compose
@@ -47,6 +47,7 @@ main() {
   fi
   git cat-file -e "$target:compose.vps.yaml"
 
+  original_umask="$(umask)"
   umask 077
   mkdir -p "$backup_root"
   backup_root="$(cd "$backup_root" && pwd)"
@@ -83,6 +84,7 @@ main() {
   echo "Checking backup archives..."
   "${compose[@]}" exec -T db pg_restore --list < "$backup/database.dump" >/dev/null
   tar -tzf "$backup/images.tgz" >/dev/null
+  umask "$original_umask"
 
   echo "Updating source code..."
   if [[ $# -eq 1 ]]; then
@@ -93,7 +95,11 @@ main() {
   fi
   "${compose[@]}" config --quiet
   echo "Building and deploying..."
-  "${compose[@]}" up -d --build db migrate app
+  "${compose[@]}" up -d --build db migrate app || {
+    state=$?
+    "${compose[@]}" logs --no-color --tail=100 migrate app >&2 || echo "Could not retrieve deployment logs." >&2
+    (exit "$state")
+  }
   echo "Waiting for app health..."
   app_id="$("${compose[@]}" ps -q app)"
   [[ -n "$app_id" ]]

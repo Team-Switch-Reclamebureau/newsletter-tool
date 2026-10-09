@@ -242,6 +242,9 @@ It checks that both archives can be listed, but this is not a restoration test.
 Backup exports run without interactive stdin or password prompts. PostgreSQL
 exports fail explicitly if a table lock cannot be acquired within 30 seconds.
 Progress messages identify each backup and deployment stage.
+The private backup umask is restored before Git updates the source files.
+Docker copies source files with ownership readable by the non-root tools user,
+and makes the runtime package manifest readable regardless of checkout permissions.
 The app remains unavailable during backups, rebuilding, and migrations.
 Other applications and the host proxy are not changed.
 
@@ -249,7 +252,8 @@ Successful updates require a healthy app and a passing internal `/healthz`
 request. Verify your public HTTPS URL separately afterward. Backups are retained
 without automatic deletion; copy them off the VPS and protect `deployment.env`,
 which contains secrets. On failure the script exits without an automatic
-rollback, and the app may remain stopped. Inspect the error and migration logs
+rollback, and the app may remain stopped. Failed Compose deployments print the
+migration and application logs automatically. Inspect the error and migration logs
 before restarting or restoring. An interrupted update can leave a
 `.update-lock` directory in the backup root; remove it only after confirming no
 update is running.
