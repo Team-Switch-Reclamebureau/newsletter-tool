@@ -11,8 +11,8 @@ const template = '<mjml><mj-body>{{items}}</mj-body></mjml>';
 function edition(): Newsletter {
 	const newsletter = createNewsletter('October highlights');
 	newsletter.items.push({
-		...createItem(), image: 'https://example.com/image.jpg', title: 'Our latest story',
-		text: 'First line\nSecond line', button: 'Read more', url: 'https://example.com/story?a=1&b=2'
+		...createItem(), fields: { image: 'https://example.com/image.jpg', title: 'Our latest story',
+			text: 'First line\nSecond line', button: 'Read more', url: 'https://example.com/story?a=1&b=2', image_alt: 'Story photo' }
 	});
 	return newsletter;
 }
@@ -32,11 +32,9 @@ describe('newsletter data', () => {
 		expect(parseNewsletter(serializeNewsletter(newsletter))).toEqual(newsletter);
 	});
 
-	it('clones legacy editions with new identities and timestamps while preserving content and images', () => {
+	it('clones editions with new identities and timestamps while preserving typed content and images', () => {
 		const original = edition();
 		original.createdAt = original.updatedAt = '2020-01-01T00:00:00.000Z';
-		original.items[0].imageAssetId = crypto.randomUUID();
-		original.items[0].imageAlt = 'Story photo';
 		const snapshot = serializeNewsletter(original);
 		const clone = cloneNewsletter(original, '  November variation  ');
 		expect(clone.name).toBe('November variation');
@@ -46,7 +44,7 @@ describe('newsletter data', () => {
 		expect(clone.items[0].id).not.toBe(original.items[0].id);
 		expect(clone.items[0]).toEqual({ ...original.items[0], id: clone.items[0].id });
 		expect(parseNewsletter(serializeNewsletter(clone))).toEqual(clone);
-		clone.items[0].title = 'Changed only in clone';
+		clone.items[0].fields.title = 'Changed only in clone';
 		clone.items.push(createItem());
 		expect(serializeNewsletter(original)).toBe(snapshot);
 	});
@@ -88,31 +86,36 @@ describe('newsletter data', () => {
 
 	it('rejects newsletter JSON over the byte limit', () => {
 		const newsletter = edition();
-		newsletter.items[0].text = 'x'.repeat(MAX_TEMPLATE_BYTES);
+		newsletter.items[0].fields.text = 'x'.repeat(MAX_TEMPLATE_BYTES);
 		expect(() => parseNewsletter(serializeNewsletter(newsletter))).toThrow('1 MB');
 	});
 
-	it('validates titles, button pairs, and safe absolute URLs', () => {
+	it('ignores legacy properties while preserving typed fields and item identities', () => {
 		const newsletter = edition();
-		newsletter.items[0].url = 'javascript:alert(1)';
-		expect(newsletterError(newsletter)).toContain('http://');
-		newsletter.items[0].url = '';
-		expect(newsletterError(newsletter)).toContain('both');
-		newsletter.items[0].button = '';
-		newsletter.items[0].image = '/local.png';
-		expect(newsletterError(newsletter)).toContain('image URL');
-		newsletter.items[0].image = '';
-		newsletter.items[0].title = ' ';
-		expect(newsletterError(newsletter)).toContain('title');
+		for (const key of ['title', 'text', 'image', 'imageAssetId', 'imageAlt', 'button', 'url']) {
+			const parsed = parseNewsletter(JSON.stringify({ ...newsletter, items: [{ ...newsletter.items[0], [key]: 'legacy' }] }));
+			expect(parsed).toEqual(newsletter);
+			expect(Object.keys(parsed.items[0]).sort()).toEqual(['fields', 'id']);
+		}
+		const old = parseNewsletter(JSON.stringify({ ...newsletter, items: [{ id: 'old', title: 'Old item', text: 'Old body', image: 'not-a-url' }] }));
+		expect(old.items).toEqual([{ id: 'old', fields: {} }]);
+		expect(serializeNewsletter(old)).not.toContain('Old item');
+	});
+
+	it('validates newsletter names independently of item fields', () => {
+		const newsletter = edition();
+		newsletter.name = '';
+		expect(newsletterError(newsletter)).toContain('name');
+		newsletter.name = 'x'.repeat(161);
+		expect(newsletterError(newsletter)).toContain('160');
 	});
 });
 
 describe('newsletter assembly', () => {
-	it('round-trips dynamic fields, including unused values, without requiring a legacy title', () => {
+	it('round-trips typed fields, including unused values, without fixed required item fields', () => {
 		const newsletter = edition();
 		newsletter.fields = { headline: 'Edition headline', removed: 'Keep me' };
 		newsletter.items[0].fields = { heading: 'Item heading', price: '12.5' };
-		newsletter.items[0].title = '';
 		expect(parseNewsletter(serializeNewsletter(newsletter))).toEqual(newsletter);
 	});
 
@@ -130,7 +133,7 @@ describe('newsletter assembly', () => {
 		newsletter.items[0].fields = { heading: '<Story>', description: 'Line 1\nLine 2', destination: 'https://example.com/?a=1&b=2', price: '12.5' };
 		newsletter.items.push({ ...createItem(), fields: { heading: 'Second story' } });
 		const main = '<mjml><mj-body><mj-section><mj-column><mj-text>{{text:heading}} {{textarea:introduction}}</mj-text></mj-column></mj-section>{{items}}</mj-body></mjml>';
-		const snippet = '<mj-section><mj-column><mj-text>{{text:heading}} {{textarea:description}} {{number:price}}</mj-text><mj-button href="{{url:destination}}">{{title}}</mj-button></mj-column></mj-section>';
+		const snippet = '<mj-section><mj-column><mj-text>{{text:heading}} {{textarea:description}} {{number:price}}</mj-text><mj-button href="{{url:destination}}">{{text:heading}}</mj-button></mj-column></mj-section>';
 		const result = composeNewsletter(main, snippet, newsletter);
 		expect(result.error).toBeNull();
 		expect(result.source).toContain('Global &amp; {{text:heading}}');
@@ -138,7 +141,6 @@ describe('newsletter assembly', () => {
 		expect(result.source).toContain('&lt;Story&gt; Line 1<br />Line 2 12.5');
 		expect(result.source).toContain('https://example.com/?a=1&amp;b=2');
 		expect(result.source).toContain('Second story');
-		expect(result.source).toContain('Our latest story');
 		expect((await renderTemplate(result.source)).errors).toEqual([]);
 	});
 
@@ -156,13 +158,13 @@ describe('newsletter assembly', () => {
 
 	it('preserves commented tags without generating fields or treating them as errors', () => {
 		const main = template.replace('{{items}}', '<!-- {{unsupported}} -->{{items}}');
-		expect(composeNewsletter(main, '<!-- {{bad:type}} -->{{title}}', edition()).error).toBeNull();
+		expect(composeNewsletter(main, '<!-- {{bad:type}} -->{{text:title}}', edition()).error).toBeNull();
 	});
 
 	it('repeats the custom snippet in item order and fills every field', async () => {
 		const newsletter = edition();
-		newsletter.items.push({ ...createItem(), title: 'Another story', text: 'Another text' });
-		const snippet = '<mj-section><mj-column><mj-image src="{{image}}" /><mj-text>{{title}}</mj-text><mj-text>{{text}}</mj-text><mj-button href="{{url}}">{{button}}</mj-button></mj-column></mj-section>';
+		newsletter.items.push({ ...createItem(), fields: { title: 'Another story', text: 'Another text' } });
+		const snippet = '<mj-section><mj-column><mj-image src="{{image:image}}" /><mj-text>{{text:title}}</mj-text><mj-text>{{textarea:text}}</mj-text><mj-button href="{{url:url}}">{{text:button}}</mj-button></mj-column></mj-section>';
 		const result = composeNewsletter(template, snippet, newsletter);
 		expect(result.error).toBeNull();
 		expect(result.source).toContain('src="https://example.com/image.jpg"');
@@ -191,7 +193,7 @@ describe('newsletter assembly', () => {
 
 	it('escapes content and does not recursively interpret user placeholders', () => {
 		const newsletter = edition();
-		newsletter.items[0].title = '<mj-raw>Injected</mj-raw> "{{items}}" &';
+		newsletter.items[0].fields.title = '<mj-raw>Injected</mj-raw> "{{items}}" &';
 		const result = composeNewsletter(template, null, newsletter);
 		expect(result.source).toContain('&lt;mj-raw&gt;Injected&lt;/mj-raw&gt;');
 		expect(result.source).toContain('&quot;{{items}}&quot; &amp;');
@@ -219,7 +221,7 @@ describe('newsletter assembly', () => {
 
 	it('enforces the assembled byte limit after escaping item content', () => {
 		const newsletter = edition();
-		newsletter.items[0].text = '&'.repeat(Math.floor(MAX_TEMPLATE_BYTES / 4));
+		newsletter.items[0].fields.text = '&'.repeat(Math.floor(MAX_TEMPLATE_BYTES / 4));
 		expect(composeNewsletter(template, null, newsletter).error).toContain('1 MB');
 	});
 });

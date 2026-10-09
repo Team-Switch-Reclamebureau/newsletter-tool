@@ -6,16 +6,16 @@
 	import { untrack } from 'svelte';
 	import AdminEmailSettings from '#lib/AdminEmailSettings.svelte';
 	import AdminUsers from '#lib/AdminUsers.svelte';
+	import { useToasts } from '#lib/toast-context.js';
 
 	let { data }: { data: PageData } = $props();
+	const toasts = useToasts();
 	const initial = untrack(() => data.settings);
 	let applicationName = $state(initial.applicationName);
 	let baseColor = $state(initial.baseColor);
 	let accentColor = $state(initial.accentColor);
 	let saved = $state<ApplicationSettings>({ ...initial });
 	let saving = $state(false);
-	let message = $state('');
-	let failed = $state(false);
 	let emailDirty = $state(false);
 	const brandingDirty = $derived(applicationName !== saved.applicationName || baseColor !== saved.baseColor || accentColor !== saved.accentColor);
 	const dirty = $derived(brandingDirty || emailDirty);
@@ -30,10 +30,8 @@
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		message = '';
-		failed = false;
 		const invalid = brandingError(applicationName, baseColor, accentColor);
-		if (invalid) { message = invalid; failed = true; return; }
+		if (invalid) { toasts.error(invalid); return; }
 		saving = true;
 		try {
 			const result = await requestJson<{ settings: ApplicationSettings }>('/api/admin/settings', jsonRequest('PATCH', {
@@ -44,10 +42,9 @@
 			baseColor = saved.baseColor;
 			accentColor = saved.accentColor;
 			await invalidateAll();
-			message = 'Settings saved. Branding applies to the workspace and sign-in screen for all users.';
+			toasts.success('Settings saved. Branding applies to the workspace and sign-in screen for all users.');
 		} catch (cause) {
-			failed = true;
-			message = cause instanceof Error ? cause.message : 'Settings could not be saved. Please try again.';
+			toasts.error(cause instanceof Error ? cause.message : 'Settings could not be saved. Please try again.');
 		} finally { saving = false; }
 	}
 
@@ -84,7 +81,6 @@
 				<div class="actions"><button type="submit" disabled={!brandingDirty}>{saving ? 'Saving…' : 'Save settings'}</button><button class="secondary" type="button" onclick={reset}>Restore defaults</button></div>
 			</fieldset>
 		</form>
-		{#if message}<p class:error={failed} class:success={!failed} role={failed ? 'alert' : 'status'}>{message}</p>{/if}
 	</section>
 	<section aria-labelledby="email-heading"><h2 id="email-heading">Email settings</h2><AdminEmailSettings initial={data.emailSettings} bind:dirty={emailDirty} /></section>
 	<section aria-labelledby="users-heading"><h2 id="users-heading">User management</h2><AdminUsers initial={data.users} currentUserId={data.currentUserId} /></section>
@@ -115,6 +111,4 @@
 	button.secondary { background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); border: 1px solid var(--ui-border, #d3ddc8); }
 	button:disabled { opacity: .55; cursor: default; }
 	a:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
-	.error { color: #9b4335; }
-	.success { color: var(--ui-text, #648249); }
 </style>

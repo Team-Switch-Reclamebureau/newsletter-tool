@@ -2,23 +2,22 @@
 	import { untrack } from 'svelte';
 	import { jsonRequest, requestJson } from './api-client';
 	import { emailSettingsError, type EmailSettings } from './email-settings';
+	import { useToasts } from './toast-context';
 
 	let { initial, dirty = $bindable(false) }: { initial: EmailSettings; dirty?: boolean } = $props();
+	const toasts = useToasts();
 	let saved = $state(untrack(() => ({ ...initial })));
 	let settings = $state(untrack(() => ({ ...initial })));
 	let password = $state('');
 	let clearPassword = $state(false);
 	let busy = $state(false);
-	let message = $state('');
-	let failed = $state(false);
 	$effect(() => { dirty = JSON.stringify(settings) !== JSON.stringify(saved) || Boolean(password) || clearPassword; });
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		message = '';
 		const body = { ...settings, password, clearPassword };
 		const invalid = emailSettingsError(body);
-		if (invalid) { failed = true; message = invalid; return; }
+		if (invalid) { toasts.error(invalid); return; }
 		busy = true;
 		try {
 			const result = await requestJson<{ settings: EmailSettings }>('/api/admin/email', jsonRequest('PATCH', body));
@@ -26,31 +25,26 @@
 			settings = { ...saved };
 			password = '';
 			clearPassword = false;
-			failed = false;
-			message = 'Email settings saved.';
+			toasts.success('Email settings saved.');
 		} catch (cause) {
-			failed = true;
-			message = cause instanceof Error ? cause.message : 'Email settings could not be saved.';
+			toasts.error(cause instanceof Error ? cause.message : 'Email settings could not be saved.');
 		} finally { busy = false; }
 	}
 
 	async function testEmail() {
 		busy = true;
-		message = '';
 		try {
 			const result = await requestJson<{ message: string }>('/api/admin/email', jsonRequest('POST', {}));
-			failed = false;
-			message = result.message;
+			toasts.success(result.message);
 		} catch (cause) {
-			failed = true;
-			message = cause instanceof Error ? cause.message : 'The test email could not be sent.';
+			toasts.error(cause instanceof Error ? cause.message : 'The test email could not be sent.');
 		} finally { busy = false; }
 	}
 </script>
 
 <form onsubmit={save}>
 	<fieldset disabled={busy}>
-		<p>Used for account invitations and password recovery, not newsletter delivery.</p>
+		<p>Used for account invitations, password recovery, and newsletter test emails, not campaign delivery.</p>
 		<label for="smtp-host">SMTP hostname</label><input id="smtp-host" bind:value={settings.host} required maxlength="253" />
 		<label for="smtp-port">Port</label><input id="smtp-port" type="number" min="1" max="65535" bind:value={settings.port} required />
 		<label for="smtp-security">Connection security</label>
@@ -65,7 +59,6 @@
 		<p>Save first, then test. SMTP acceptance does not guarantee inbox delivery.</p>
 	</fieldset>
 </form>
-{#if message}<p class:error={failed} role={failed ? 'alert' : 'status'}>{message}</p>{/if}
 
 <style>
 	fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
@@ -79,5 +72,5 @@
 	.secondary { background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); border: 1px solid var(--ui-border, #d3ddc8); }
 	button:disabled { opacity: .55; cursor: default; }
 	input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
-	.error, .warning { color: #9b4335; }
+	.warning { color: #9b4335; }
 </style>

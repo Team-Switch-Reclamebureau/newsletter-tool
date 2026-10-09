@@ -1,40 +1,39 @@
 <script lang="ts">
 	import { jsonRequest, requestJson } from './api-client';
+	import { useToasts } from './toast-context';
 
 	let { mode, token = '' }: { mode: 'recovery' | 'reset' | 'change'; token?: string } = $props();
+	const toasts = useToasts();
 	let email = $state('');
 	let currentPassword = $state('');
 	let password = $state('');
 	let confirmation = $state('');
 	let message = $state('');
 	let busy = $state(false);
-	let failed = $state(false);
 	let complete = $state(false);
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		message = '';
-		if (mode !== 'recovery' && password !== confirmation) { failed = true; message = 'The new passwords do not match.'; return; }
+		if (mode !== 'recovery' && password !== confirmation) { message = 'The new passwords do not match.'; return; }
 		busy = true;
 		try {
 			if (mode === 'recovery') {
 				await requestJson('/api/auth/request-password-reset', jsonRequest('POST', { email }));
-				message = 'If this address has an account, an email with a one-hour password link has been sent. Check your inbox and spam folder.';
+				toasts.success('If this address has an account, an email with a one-hour password link has been sent. Check your inbox and spam folder.');
 			} else if (mode === 'reset') {
 				await requestJson('/api/auth/reset-password', jsonRequest('POST', { token, newPassword: password }));
-				message = 'Your password has been saved. Sign in with your new password.';
+				toasts.success('Your password has been saved. Sign in with your new password.');
 				complete = true;
 			} else {
 				await requestJson('/api/auth/change-password', jsonRequest('POST', { currentPassword, newPassword: password, revokeOtherSessions: true }));
-				message = 'Password changed. Other sessions have been signed out.';
+				toasts.success('Password changed. Other sessions have been signed out.');
 			}
-			failed = false;
 			currentPassword = '';
 			password = '';
 			confirmation = '';
 		} catch (cause) {
-			failed = true;
-			message = cause instanceof Error ? cause.message : 'The password operation failed. Please try again.';
+			toasts.error(cause instanceof Error ? cause.message : 'The password operation failed. Please try again.');
 		} finally { busy = false; }
 	}
 </script>
@@ -53,8 +52,10 @@
 			<button type="submit">{busy ? 'Working…' : mode === 'recovery' ? 'Send password reset email' : mode === 'change' ? 'Change password' : 'Save password'}</button>
 		</fieldset>
 	</form>
+{:else}
+	<p>Your password has been saved. Sign in with your new password.</p>
 {/if}
-{#if message}<p class:error={failed} role={failed ? 'alert' : 'status'}>{message}</p>{/if}
+{#if message}<p class="error" role="alert">{message}</p>{/if}
 {#if mode === 'reset'}<p><a href="/forgot-password">Request a new link</a> if this link has expired or already been used.</p>{/if}
 {#if mode !== 'change'}<p><a href="/login">Back to sign in</a></p>{/if}
 

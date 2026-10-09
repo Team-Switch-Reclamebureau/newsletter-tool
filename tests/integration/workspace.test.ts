@@ -62,6 +62,62 @@ beforeAll(async () => {
 afterAll(async () => { if (fixture) await fixture.stop(); });
 
 describe('self-hosted workspace against PostgreSQL', () => {
+	it('loads old editions without a lockout and allows replacing their legacy template', async () => {
+		const created = await request('/api/projects', 'POST', { name: 'Older content' });
+		expect(created.status).toBe(201);
+		const olderProject = (await created.json()).project as RemoteProject;
+		const path = `/api/projects/${olderProject.id}`;
+		const old = {
+			...createNewsletter('Old edition'),
+			items: [
+				{ id: 'old-item', title: 'Ignored old title', text: 'Ignored body', image: 'invalid-legacy-url' },
+				{ id: 'mixed-item', title: 'Ignored old title', fields: { heading: 'Keep this typed heading' } }
+			]
+		};
+		await fixture.pool.query('UPDATE projects SET item_template = $1 WHERE id = $2', ['<mj-section><mj-column><mj-text>{{title}}</mj-text></mj-column></mj-section>', olderProject.id]);
+		await fixture.pool.query(`
+			INSERT INTO newsletters(id, project_id, content, created_by)
+			SELECT $1, $2, $3, created_by FROM projects WHERE id = $2`, [old.id, olderProject.id, old]);
+		const loaded = await request(`${path}/newsletters`);
+		expect(loaded.status).toBe(200);
+		const canonical = (await loaded.json()).newsletters[0].newsletter as Newsletter;
+		expect(canonical.items).toEqual([
+			{ id: 'old-item', fields: {} },
+			{ id: 'mixed-item', fields: { heading: 'Keep this typed heading' } }
+		]);
+		expect((await request('/')).status).toBe(200);
+		const snippet = '<mj-section><mj-column><mj-text>{{text:heading}}</mj-text></mj-column></mj-section>';
+		expect((await request(path, 'PATCH', { name: olderProject.name, template: olderProject.template, itemTemplate: snippet, revision: 1 })).status).toBe(200);
+		expect((await request(`${path}/newsletters/${old.id}`, 'PATCH', { newsletter: old, revision: 1 })).status).toBe(200);
+		const stored = (await fixture.pool.query<{ content: Newsletter }>('SELECT content FROM newsletters WHERE id = $1', [old.id])).rows[0].content;
+		expect(stored.items).toEqual(canonical.items);
+		const html = await fetch(await permalink(olderProject.id, old.id));
+		expect(html.status).toBe(200);
+		expect(await html.text()).toContain('Keep this typed heading');
+	});
+
+	it('persists editor layout per user across sign-ins and rejects invalid or cross-origin updates', async () => {
+		const path = '/api/account/preferences';
+		expect((await request(path, 'GET', undefined, '')).status).toBe(401);
+		expect((await (await request(path)).json()).preferences).toEqual({ editorLayout: 'split' });
+		expect((await request(path, 'PATCH', { editorLayout: 'dynamic' }, ownerCookie, 'https://untrusted.example')).status).toBe(403);
+		for (const body of [{}, { editorLayout: 'preview' }, { editorLayout: null }, { editorLayout: 'dynamic', userId: 'another-user' }]) {
+			expect((await request(path, 'PATCH', body)).status).toBe(400);
+		}
+		const saved = await request(path, 'PATCH', { editorLayout: 'dynamic' });
+		expect(saved.status).toBe(200);
+		expect((await saved.json()).preferences).toEqual({ editorLayout: 'dynamic' });
+		expect((await (await request(path, 'GET', undefined, outsiderCookie)).json()).preferences).toEqual({ editorLayout: 'split' });
+		const newSession = await login('owner@example.test');
+		expect((await (await request(path, 'GET', undefined, newSession)).json()).preferences).toEqual({ editorLayout: 'dynamic' });
+		const workspace = await request('/');
+		expect(workspace.status).toBe(200);
+		const html = await workspace.text();
+		expect(html).toContain('Your account');
+		expect(html).not.toContain('workspace-card');
+		expect((await request(path, 'PATCH', { editorLayout: 'split' })).status).toBe(200);
+	});
+
 	it('persists independent edition UTM settings and updates public HTML without changing original URLs', async () => {
 		const main = '<mjml><mj-body><mj-section><mj-column><mj-button href="https://example.test/literal?existing=1&amp;utm_source=old#part">Literal link</mj-button><mj-text><a href="mailto:test@example.test">Email</a><a href="#anchor">Anchor</a></mj-text></mj-column></mj-section>{{items}}</mj-body></mjml>';
 		const snippet = '<mj-section><mj-column><mj-button href="{{url:landing}}">{{text:heading}}</mj-button><mj-image src="{{image:photo}}" /></mj-column></mj-section>';
@@ -73,7 +129,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		const utm = { utm_source: 'mail', utm_medium: 'mail', utm_campaign: 'nieuwsbrief & bloemen', utm_term: 'october_26' };
 		const edition = createNewsletter('Tracked newsletter');
 		expect(edition.utm).toEqual(EMPTY_UTM);
-		edition.items.push({ ...createItem(), title: '', fields: { landing: 'https://example.test/typed?existing=2#story', heading: 'Typed link', photo: 'https://example.test/image.png' } });
+		edition.items.push({ ...createItem(), fields: { landing: 'https://example.test/typed?existing=2#story', heading: 'Typed link', photo: 'https://example.test/image.png' } });
 		expect((await request(`${path}/newsletters`, 'POST', { newsletter: edition })).status).toBe(201);
 		edition.utm = utm;
 		const editionPath = `${path}/newsletters/${edition.id}`;
@@ -133,7 +189,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		const projectImage = await image('project.png');
 		const publishedImage = await image('exported.png', first.id);
 		const sharedImage = await image('clone-library.png', first.id);
-		first.items.push({ ...createItem(), title: 'Current export', image: publishedImage.url, imageAssetId: publishedImage.id });
+		first.items.push({ ...createItem(), fields: { title: 'Current export', image: publishedImage.url } });
 		expect((await request(`${path}/newsletters/${first.id}`, 'PATCH', { newsletter: first, revision: 1 })).status).toBe(200);
 		const htmlUrl = await permalink(deletionProject.id, first.id);
 		expect((await fetch(htmlUrl)).status).toBe(200);
@@ -236,7 +292,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		const typedNewsletter = createNewsletter('Typed edition');
 		typedNewsletter.fields = { heading: 'Global heading', hero: uploadedAsset.url };
 		typedNewsletter.items.push({
-			...createItem(), title: '', fields: {
+			...createItem(), fields: {
 				heading: 'Story heading', description: 'First line\nSecond line', price: '12.5', photo: uploadedAsset.url
 			}
 		});
@@ -402,16 +458,16 @@ describe('self-hosted workspace against PostgreSQL', () => {
 	it('saves a newsletter and binds hosted images to the correct project', async () => {
 		newsletter = createNewsletter('October edition');
 		newsletter.items.push({
-			...createItem(), title: 'Original story', text: 'Unique newsletter content',
-			image: 'https://example.test/tampered.png', imageAssetId: asset.id, imageAlt: 'Our story image',
-			button: 'Read more', url: 'https://example.com/story'
+			...createItem(), fields: { title: 'Original story', text: 'Unique newsletter content',
+				image: asset.url, image_alt: 'Our story image',
+				button: 'Read more', url: 'https://example.com/story' }
 		});
 		const response = await request(`/api/projects/${project.id}/newsletters`, 'POST', { newsletter });
 		expect(response.status).toBe(201);
 		const saved = await response.json();
 		newsletter = saved.newsletter;
 		newsletterRevision = saved.revision;
-		expect(newsletter.items[0].image).toBe(asset.url);
+		expect(newsletter.items[0].fields.image).toBe(asset.url);
 		const list = await request(`/api/projects/${project.id}/newsletters`);
 		expect((await list.json()).newsletters[0].newsletter).toEqual(newsletter);
 		expect((await request(`/api/projects/${project.id}/newsletters`, 'POST', { newsletter })).status).toBe(409);
@@ -453,7 +509,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 	});
 
 	it('keeps the same permalink while updating saved content and project templates', async () => {
-		const edited = { ...newsletter, items: newsletter.items.map((item) => ({ ...item, title: 'A later story' })) };
+		const edited = { ...newsletter, items: newsletter.items.map((item) => ({ ...item, fields: { ...item.fields, title: 'A later story' } })) };
 		expect((await request(`/api/projects/${project.id}/newsletters/${newsletter.id}`, 'PATCH', { newsletter: edited, revision: newsletterRevision })).status).toBe(200);
 		expect((await request(`/api/projects/${project.id}`, 'PATCH', { name: project.name, template: project.template.replace('Stable header', 'Changed header'), itemTemplate: null, revision: project.revision })).status).toBe(200);
 		expect(await permalink(project.id, newsletter.id)).toBe(exportUrl);
@@ -514,7 +570,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		const oldImage = (await uploaded.json()).asset as ImageAsset;
 		const edition = createNewsletter('Current edition without image');
 		expect((await request(`${path}/newsletters`, 'POST', { newsletter: edition })).status).toBe(201);
-		const historical = { ...edition, items: [{ ...createItem(), image: oldImage.url }] };
+		const historical = { ...edition, items: [{ ...createItem(), fields: { image: oldImage.url } }] };
 		const legacyId = crypto.randomUUID();
 		const legacyHtml = `<html><body><img src="${oldImage.url}"></body></html>`;
 		await fixture.pool.query(`
@@ -532,8 +588,11 @@ describe('self-hosted workspace against PostgreSQL', () => {
 	});
 
 	it('enforces the configured sign-in attempt threshold', async () => {
+		await fixture.pool.query('DELETE FROM "rateLimit"');
 		const body = { email: 'owner@example.test', password: 'incorrect-test-password' };
-		expect((await request('/api/auth/sign-in/email', 'POST', body, '')).status).toBe(401);
+		for (let attempt = 0; attempt < 5; attempt++) {
+			expect((await request('/api/auth/sign-in/email', 'POST', body, '')).status).toBe(401);
+		}
 		expect((await request('/api/auth/sign-in/email', 'POST', body, '')).status).toBe(429);
 	});
 
@@ -591,15 +650,14 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect((await upload(png, 'image/png', 'outsider.png', scopedProject.id, first.id, outsiderCookie)).status).toBe(404);
 		const firstContent = {
 			...first, fields: { hero: exclusive.url },
-			items: [{ ...first.items[0], imageAssetId: exclusive.id, fields: { photo: exclusive.url } }]
+			items: [{ ...first.items[0], fields: { photo: exclusive.url } }]
 		};
 		const updated = await request(`${path}/newsletters/${first.id}`, 'PATCH', { newsletter: firstContent, revision: 1 });
 		expect(updated.status).toBe(200);
 		for (const invalid of [
 			{ ...second, fields: { hero: exclusive.url } },
 			{ ...second, items: [{ ...second.items[0], fields: { photo: exclusive.url } }] },
-			{ ...second, items: [{ ...second.items[0], imageAssetId: exclusive.id }] },
-			{ ...second, items: [{ ...second.items[0], image: exclusive.url }] }
+			{ ...second, items: [{ ...second.items[0], fields: { unusedPhoto: exclusive.url } }] }
 		]) {
 			expect((await request(`${path}/newsletters/${second.id}`, 'PATCH', { newsletter: invalid, revision: 1 })).status).toBe(400);
 		}
@@ -614,7 +672,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect(cloned.status).toBe(201);
 		const cloneResult = await cloned.json();
 		expect(cloneResult.editionAssets.map((asset: ImageAsset) => asset.id)).toEqual([exclusive.id]);
-		expect(cloneResult.newsletter.items[0].image).toBe(exclusive.url);
+		expect(cloneResult.newsletter.items[0].fields.photo).toBe(exclusive.url);
 		expect((await library(clone.id)).map((asset) => asset.id).sort()).toEqual([shared.id, exclusive.id].sort());
 		const counts = await fixture.pool.query<{ count: number }>('SELECT count(*)::int AS count FROM image_assets WHERE project_id = $1', [scopedProject.id]);
 		expect(counts.rows[0].count).toBe(2);
@@ -669,7 +727,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect((await lastRemoved.json()).fileDeleted).toBe(true);
 		expect((await fetch(editionImage.url)).status).toBe(404);
 		expect((await request(`${editionDelete}?newsletterId=${clone.id}`, 'DELETE')).status).toBe(200);
-		const used = { ...first, items: [{ ...first.items[0], imageAssetId: protectedImage.id }] };
+		const used = { ...first, items: [{ ...first.items[0], fields: { image: protectedImage.url } }] };
 		expect((await request(`${path}/newsletters/${first.id}`, 'PATCH', { newsletter: used, revision: 1 })).status).toBe(200);
 		expect((await request(`${path}/assets/${protectedImage.id}`, 'DELETE')).status).toBe(409);
 		const htmlUrl = await permalink(deletionProject.id, first.id);

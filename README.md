@@ -21,17 +21,17 @@ Each saved edition has an unlisted public HTML URL for Mailchimp import; anyone
 with that link can fetch the latest saved newsletter without signing in.
 Uploads accept static JPEG, PNG, and WebP images up to **5 MB / 20 megapixels**,
 decode and normalize them to WebP, strip metadata, and create immutable URLs.
-External HTTP(S) image URLs remain supported. Items store uploaded asset ids as
-well as delivery URLs, so the server verifies that selected assets belong to the
+External HTTP(S) image URLs remain supported. Typed image fields store delivery
+URLs, and the server verifies that hosted images belong to the
 project and are available in the selected edition. Per-item alt text is supported
-via `{{image_alt}}`.
+via a typed field such as `{{text:photo_alt}}`.
 
 Use **Project images** in the project views or open an edition and use
 **Edition images**. Uploads go to the library shown by that tab.
 Project images are available
 in every edition; edition images appear only in that edition's image choices
 and its clones. Open and save an edition before uploading edition-only images.
-Both scopes appear as separate groups in legacy and typed image selectors.
+Both scopes appear as separate groups in typed image selectors.
 Direct item uploads also offer a project/edition destination.
 Existing images remain project-wide after upgrading.
 
@@ -59,13 +59,72 @@ Deletion failures are reported explicitly and can be retried.
 
 Saving newsletters or templates uses revision checks to prevent overwriting
 another user's edits. Drafts stay in memory while switching projects; save them
-to persist across refreshes. JSON import/export remains available for migration
-and portable data backups. Templates can be imported from `.mjml` files.
+to persist across refreshes. JSON export remains available for portable data
+backups; the newsletter JSON import UI is not currently exposed in the workspace.
+Templates can be imported from `.mjml` files.
+
+The edition **Content** tab offers two editor layouts:
+- **Split** keeps the full content form beside the live desktop/mobile preview.
+- **Dynamic** lets you type directly into template-driven text in the preview.
+  Click an image or link to select its field in the focused panel; the field
+  selector also exposes URLs, alt text, numbers, and fields not visible in the
+  rendered layout. **All fields & items** opens the full form for adding,
+  removing, reordering, and uploading images to items.
+
+Both layouts edit the same unsaved draft. Text is plain text (multiline fields
+preserve line breaks), not arbitrary HTML. The preview refreshes after leaving
+an inline text field so typing does not interrupt the cursor. Static template
+content and styling stay in the Templates tab. Preview links do not navigate,
+and template scripts remain disabled. Use **Save newsletter** to persist changes;
+editor-only field markers are never included in saved content or HTML exports.
+The layout preference is stored with each user account and restored across
+editions, projects, browser refreshes, and sign-ins, including other devices.
+Failed preference saves are shown explicitly and restore the previous layout.
+Rename newsletters in the edition **Settings** tab alongside UTM settings.
+The account panel at the bottom of the sidebar shows the user's profile and
+button-style actions for **Admin settings** (administrators only),
+**Change password**, and **Sign out**.
+On screens up to 1100px wide, navigation starts collapsed behind **Menu** in the
+workspace header. The drawer includes projects and account actions; selecting a
+project or starting a new project closes it. Use its close button, Escape, or
+the backdrop to dismiss it. Desktop navigation remains visible.
+
+Action feedback appears as dismissible toasts instead of banners in the editor.
+Success notifications disappear after five seconds, with the timer paused while
+hovered or keyboard-focused. Errors remain until dismissed. The same notification
+system is used for administrator and password actions; inline validation, preview
+errors, save state, and detailed upload results remain beside their controls.
+
+### Test and publish editions
+
+The **Test & publish** tab can send a test of the latest saved edition, including
+saved project templates and UTM settings. Unsaved content/template edits are not
+sent. Configure the shared SMTP sender in **Admin settings → Email settings** first.
+The same SMTP configuration is used for account emails and newsletter tests.
+
+Enter up to **20 comma-separated email addresses** in **Project test recipients**
+and click **Save recipients**, then **Send test email**. The recipient list is
+stored in PostgreSQL for the whole project, shared across its editions and project
+members, and restored on later visits. Revision checks prevent overwriting another
+member's recipient edits or sending to a list changed since you loaded it;
+reload the project if a conflict is reported. Saving an
+empty list clears it. Addresses are normalized and duplicates are removed.
+
+Each recipient receives a separate HTML email with a `[Test]` subject; the other
+recipients' addresses are not exposed. The HTML uses the same renderer as the
+public permalink. Tests are limited to five sends per user and per project per
+minute. Success means SMTP acceptance, not confirmed inbox delivery. Partial or
+failed deliveries produce explicit errors; check SMTP logs before retrying because
+some recipients may already have received the test. Tests do not send campaigns.
 
 ### Live HTML permalinks for Mailchimp
 
-Save an edition to create its **Public HTML permalink**, available in the editor
-and the editions table. Use **Copy link**, **Open HTML**, or **Download HTML**.
+Save an edition to create its **Public HTML permalink**, available in the edition's
+**Test & publish** tab. Use **Copy link**, **Open HTML**, or **Download HTML**.
+The Content, Settings, and Edition images tabs keep these controls out of the
+editing area. Breadcrumbs show the current project and edition; click the project
+to return to its editions overview without discarding drafts. Edition save status
+and the save button are in the header beside the breadcrumbs.
 The URL ends in `.html` and has its own random identifier, independent of the
 edition id. It remains the same across saves; clones receive separate links.
 Unsaved drafts have no public link.
@@ -81,7 +140,8 @@ per minute. Deleting an edition makes its permalink return 404.
 Mailchimp needs an internet-accessible deployment URL, normally HTTPS.
 `127.0.0.1` and `localhost` URLs work only for local testing and cannot be
 fetched by Mailchimp. Re-fetch/import the link in Mailchimp after saving changes;
-this app does not automatically update Mailchimp campaigns or send emails.
+this app does not automatically update Mailchimp campaigns or send campaigns.
+Test emails are available separately in **Test & publish**.
 
 The snapshot interface and creation endpoint have been removed. Existing legacy
 snapshot records are retained without modification and their authenticated
@@ -414,8 +474,8 @@ password links for that user. Password changes require the current password and
 sign out other sessions. Recovery requests and administrator email actions are
 rate-limited. SMTP/delivery failures are reported rather than treated as success.
 
-These are transactional account emails only: newsletter HTML exports still do
-not send campaigns. Migrations run automatically during the normal deployment
+The same saved SMTP settings also deliver newsletter tests from **Test & publish**;
+newsletter HTML exports do not send campaigns. Migrations run automatically during the normal deployment
 update; no SMTP environment variables or update-script changes are required.
 
 ### Local testing with Docker PostgreSQL
@@ -490,7 +550,7 @@ live HTML exports include tracking; newsletter data and original
 templates retain their original URLs.
 Saving edition settings also saves pending content changes in that edition,
 using its revision check. Other editions keep their own independent values.
-UTM settings are included in edition JSON import/export and copied independently
+UTM settings are included in edition JSON exports and copied independently
 when cloning. Upgrading from project-level UTM settings carries the project's
 saved values into its existing editions.
 
@@ -515,15 +575,12 @@ save, the clone gets its own associations to the source edition's image library,
 reusing stored files and keeping their URLs unchanged. Later uploads remain
 specific to their destination edition; they do not appear in existing clones.
 Editing the copy does not change the source. Project templates remain shared
-and the clone gets its own HTML permalink when saved. Importing a saved edition's JSON back
-into the same project also reuses that source edition's images.
+and the clone gets its own HTML permalink when saved.
 
 Choose a project, click **New newsletter**, and give the edition a name. Each
 edition has its own ordered list of items. Add, edit, remove, or reorder items
-without changing other editions or the project templates. Item fields are an
-image URL, title, plain-text content, button label, and button URL.
-Titles are required; images and text are optional. Button labels and URLs must
-be provided together or both left blank. Image and button URLs must use HTTP(S).
+without changing other editions or the project templates. All content inputs
+come from typed placeholders in the project template and item snippet.
 
 Place exactly one `{{items}}` inside `mj-body` in the project template, where your
 repeated item sections should appear. You can also use `{{newsletter_name}}`.
@@ -539,12 +596,12 @@ repeated item sections should appear. You can also use `{{newsletter_name}}`.
 </mjml>
 ```
 
-An optional item snippet controls the layout of each item. Supported placeholders
-are `{{image}}`, `{{image_alt}}`, `{{title}}`, `{{text}}`, `{{button}}`, and `{{url}}`.
+An optional item snippet controls each repeated item's layout using typed
+placeholders such as `{{text:title}}` and `{{image:photo}}`.
 
 ### Dynamic template fields
 
-Use `{{type:name}}` to define additional input fields directly in MJML:
+Use `{{type:name}}` to define input fields directly in MJML:
 
 ```xml
 <!-- Main template: one set of fields for the newsletter -->
@@ -581,41 +638,48 @@ hyphens, and dots. Repeating a tag reuses one input; assigning different types t
 the same name in one scope is an error. Main-template and item-snippet names are
 independent. Tags in comments do not create inputs.
 
-The editor updates fields when you change templates. Values are saved in optional
-`fields` maps on the newsletter and each item, including JSON imports/exports
+The editor updates fields when you change templates. Values are saved in an optional
+newsletter `fields` map and a required `fields` map on each item, including JSON exports
 and rendered HTML exports. Changing or removing a tag does not delete its saved
 value; restoring the tag restores the input. Renaming a tag creates a new field.
-Existing version 1 newsletters and untyped placeholders remain supported.
-Typed and untyped tags can coexist; `{{text:title}}` uses a custom field while
-`{{title}}` uses the original item title. Templates with only legacy item tags
-keep the original editor.
+Items contain only `id` and `fields` in the editor. Legacy item properties are
+ignored when loading saved editions; items without a `fields`
+map start with an empty one, and existing typed values are preserved. Legacy
+properties are not copied into typed values and are omitted from subsequent
+saves and exports. Invalid typed field maps still produce an explicit error.
+Untyped content placeholders such as `{{title}}` are not rendered; they produce
+a template validation error, but do not prevent opening the project to update
+its template. No automatic content migration or legacy editor is provided.
+The structural template tokens `{{items}}`
+and `{{newsletter_name}}` remain supported. Newsletter names are edited in
+edition **Settings**, not in either content editor layout.
 For example:
 
 ```xml
 <mj-section>
   <mj-column>
-    <mj-image src="{{image}}" alt="{{image_alt}}" />
-    <mj-text font-size="24px">{{title}}</mj-text>
-    <mj-text>{{text}}</mj-text>
-    <mj-button href="{{url}}">{{button}}</mj-button>
+    <mj-image src="{{image:photo}}" alt="{{text:photo_alt}}" />
+    <mj-text font-size="24px">{{text:title}}</mj-text>
+    <mj-text>{{textarea:body}}</mj-text>
+    <mj-button href="{{url:destination}}">{{text:button_label}}</mj-button>
   </mj-column>
 </mj-section>
 ```
 
-When the item snippet is unset, the app supplies a standard layout that omits empty
-images and buttons. Custom snippets should be designed for the fields you use.
+When the item snippet is unset, the app supplies a typed standard layout with
+image, image_alt, title, text, button, and url field names. It omits empty images
+and incomplete buttons. Custom snippets should be designed for the fields you use.
 Content is escaped rather than interpreted as HTML; text line breaks are preserved.
 Unknown placeholders, invalid fields, and missing template slots are shown as
 preview errors. The preview updates automatically as you edit, and the MJML view
 shows the assembled source.
 
-**Save newsletter** persists the edition in PostgreSQL. **Export JSON** downloads
-versioned data containing all fields, item order, ids, and timestamps. Importing
-newsletter JSON creates a new draft with a new edition id; save it to persist it.
-Import filenames do not need to match the newsletter id. No folder access or
-browser filesystem permissions are required.
+**Save newsletter** persists the edition in PostgreSQL. **Export JSON** in Test & publish downloads
+versioned data containing all fields, item order, ids, and timestamps. JSON parsing
+and serialization remain available for future import workflows, but there is no
+newsletter import control in the current workspace.
 
-Templates, imported newsletter data, and assembled previews are limited to 1 MB each.
+Templates, newsletter data, and assembled previews are limited to 1 MB each.
 Preview HTML is isolated in a sandboxed iframe
 without script execution or top-level navigation permissions. Remote images may still
 be fetched by your browser.

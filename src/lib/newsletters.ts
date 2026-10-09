@@ -1,18 +1,12 @@
-import { MAX_TEMPLATE_BYTES, UUID_PATTERN } from './remote';
+import { DEFAULT_ITEM_SNIPPET, MAX_TEMPLATE_BYTES } from './remote';
 import { fieldError, fieldValue, templateFields, validFieldValues, validHttpUrl, type FieldValues } from './template-fields';
 import { EMPTY_UTM, parseUtm, type UtmSettings } from './utm';
+import { markPreviewFields, type PreviewField } from './preview-fields';
 export { validHttpUrl } from './template-fields';
 
 export interface NewsletterItem {
-	fields?: FieldValues;
+	fields: FieldValues;
 	id: string;
-	image: string;
-	imageAssetId?: string;
-	imageAlt?: string;
-	title: string;
-	text: string;
-	button: string;
-	url: string;
 }
 
 export interface Newsletter {
@@ -35,7 +29,7 @@ export function createNewsletter(name: string): Newsletter {
 }
 
 export function createItem(): NewsletterItem {
-	return { id: crypto.randomUUID(), image: '', title: 'New item', text: '', button: '', url: '' };
+	return { id: crypto.randomUUID(), fields: {} };
 }
 
 export function cloneNewsletter(newsletter: Newsletter, name: string): Newsletter {
@@ -45,7 +39,7 @@ export function cloneNewsletter(newsletter: Newsletter, name: string): Newslette
 		...(newsletter.fields === undefined ? {} : { fields: { ...newsletter.fields } }),
 		items: newsletter.items.map((item) => ({
 			...item, id: crypto.randomUUID(),
-			...(item.fields === undefined ? {} : { fields: { ...item.fields } })
+			fields: { ...item.fields }
 		}))
 	};
 }
@@ -54,27 +48,16 @@ function record(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isItem(value: unknown): value is NewsletterItem {
-	return record(value) && ['id', 'image', 'title', 'text', 'button', 'url']
-		.every((key) => typeof value[key] === 'string') && typeof value.id === 'string' && value.id.length > 0
-		&& (value.imageAssetId === undefined || (typeof value.imageAssetId === 'string' && UUID_PATTERN.test(value.imageAssetId)))
-		&& (value.imageAlt === undefined || typeof value.imageAlt === 'string')
+function isItem(value: unknown): value is { id: string; fields?: FieldValues } {
+	return record(value) && typeof value.id === 'string' && value.id.length > 0
 		&& (value.fields === undefined || validFieldValues(value.fields));
 }
 
 export function newsletterError(newsletter: Newsletter): string | null {
 	if (!newsletter.name.trim()) return 'Give this newsletter a name.';
+	if (newsletter.name.length > 160) return 'Keep the newsletter name within 160 characters.';
 	try { parseUtm(newsletter.utm); }
 	catch (cause) { return cause instanceof Error ? cause.message : 'Invalid UTM settings.'; }
-	for (const [index, item] of newsletter.items.entries()) {
-		const prefix = `Item ${index + 1}:`;
-		if (item.fields === undefined && !item.title.trim()) return `${prefix} add a title.`;
-		if (item.image && !validHttpUrl(item.image)) return `${prefix} use an absolute http:// or https:// image URL.`;
-		if (item.url && !validHttpUrl(item.url)) return `${prefix} use an absolute http:// or https:// button URL.`;
-		if (Boolean(item.button.trim()) !== Boolean(item.url.trim())) {
-			return `${prefix} add both a button label and URL, or leave both empty.`;
-		}
-	}
 	return null;
 }
 
@@ -93,14 +76,16 @@ export function parseNewsletter(contents: string): Newsletter {
 		|| typeof value.updatedAt !== 'string' || !Array.isArray(value.items) || !value.items.every(isItem)
 		|| (value.fields !== undefined && !validFieldValues(value.fields))
 		|| !Number.isFinite(Date.parse(value.createdAt)) || !Number.isFinite(Date.parse(value.updatedAt))) {
-		throw new Error('Invalid newsletter file. Expected a version 1 newsletter with named items.');
+		throw new Error('Invalid newsletter file. Expected a version 1 newsletter with valid item ids and string-valued field maps.');
 	}
 	if (new Set(value.items.map((item) => item.id)).size !== value.items.length) {
 		throw new Error('Newsletter item ids must be unique.');
 	}
 	const newsletter: Newsletter = {
 		version: 1, id: value.id, name: value.name, createdAt: value.createdAt,
-		updatedAt: value.updatedAt, items: value.items, utm: parseUtm(value.utm),
+		updatedAt: value.updatedAt,
+		items: value.items.map((item) => ({ id: item.id, fields: { ...item.fields } })),
+		utm: parseUtm(value.utm),
 		...(value.fields === undefined ? {} : { fields: value.fields })
 	};
 	const message = newsletterError(newsletter);
@@ -115,26 +100,20 @@ function escapeMarkup(value: string): string {
 }
 
 export function defaultItemSnippet(item: NewsletterItem): string {
-	return `<mj-section><mj-column>
-${item.image ? '<mj-image src="{{image}}" alt="{{image_alt}}" />' : ''}
-<mj-text font-size="24px" font-weight="bold">{{title}}</mj-text>
-<mj-text>{{text}}</mj-text>
-${item.button && item.url ? '<mj-button href="{{url}}">{{button}}</mj-button>' : ''}
-</mj-column></mj-section>`;
+	let source = DEFAULT_ITEM_SNIPPET;
+	if (!fieldValue(item.fields, 'image')) source = source.replace(/<mj-image\b[^>]*\/>/, '');
+	if (!fieldValue(item.fields, 'button') || !fieldValue(item.fields, 'url')) source = source.replace(/<mj-button\b[^>]*>[\s\S]*?<\/mj-button>/, '');
+	return source;
 }
 
 export function templateValuesError(template: string, snippet: string | null, newsletter: Newsletter | null): string | null {
-	for (const [scope, source] of [['template', template], ['item', snippet ?? '{{image}}{{image_alt}}{{title}}{{text}}{{button}}{{url}}']] as const) {
+	for (const [scope, source] of [['template', template], ['item', snippet ?? DEFAULT_ITEM_SNIPPET]] as const) {
 		const schema = templateFields(source, scope);
 		if (schema.error) return schema.error;
 		const entries = scope === 'template' ? [newsletter] : newsletter?.items ?? [];
 		for (const [index, entry] of entries.entries()) {
 			if (!entry) continue;
 			for (const field of schema.fields) {
-				if (!field.typed) {
-					if (field.name === 'title' && 'title' in entry && !entry.title.trim()) return `Item ${index + 1}: add a title.`;
-					continue;
-				}
 				const message = fieldError(field, fieldValue(entry.fields, field.name));
 				if (message) return `${scope === 'item' ? `Item ${index + 1}: ` : ''}${message}`;
 			}
@@ -143,7 +122,7 @@ export function templateValuesError(template: string, snippet: string | null, ne
 	return null;
 }
 
-export function composeNewsletter(template: string, snippet: string | null, newsletter: Newsletter | null): { source: string; error: string | null } {
+export function composeNewsletter(template: string, snippet: string | null, newsletter: Newsletter | null, previewFields?: PreviewField[]): { source: string; error: string | null } {
 	const fail = (error: string) => ({ source: '', error });
 	if (!template) return { source: '', error: null };
 	const fieldsError = templateValuesError(template, snippet, newsletter);
@@ -161,8 +140,8 @@ export function composeNewsletter(template: string, snippet: string | null, news
 	}
 	let itemMarkup = '';
 	for (const item of newsletter?.items ?? []) {
-		let unknown = '';
-		itemMarkup += (snippet ?? defaultItemSnippet(item)).replace(/<!--[\s\S]*?-->|{{\s*([^{}]*?)\s*}}/g, (match: string, tag: string | undefined) => {
+		const itemSource = snippet ?? defaultItemSnippet(item);
+		itemMarkup += (previewFields ? markPreviewFields(itemSource, previewFields, item.id) : itemSource).replace(/<!--[\s\S]*?-->|{{\s*([^{}]*?)\s*}}/g, (match: string, tag: string | undefined) => {
 			if (tag === undefined) return match;
 			const key = tag.trim();
 			if (key.includes(':')) {
@@ -170,20 +149,11 @@ export function composeNewsletter(template: string, snippet: string | null, news
 				const value = escapeMarkup(fieldValue(item.fields, name));
 				return type === 'textarea' ? value.replace(/\r?\n/g, '<br />') : value;
 			}
-			switch (key) {
-				case 'image': return escapeMarkup(item.image);
-				case 'image_alt': return escapeMarkup(item.imageAlt ?? item.title);
-				case 'title': return escapeMarkup(item.title);
-				case 'text': return escapeMarkup(item.text).replace(/\r?\n/g, '<br />');
-				case 'button': return escapeMarkup(item.button);
-				case 'url': return escapeMarkup(item.url);
-				default: unknown = key; return '';
-			}
+			return '';
 		}) + '\n';
-		if (unknown) return fail(`Unknown item placeholder {{${unknown}}}. Use image, image_alt, title, text, button, or url.`);
 	}
 	let unknown = '';
-	const source = template.replace(/<!--[\s\S]*?-->|{{\s*([^{}]*?)\s*}}/g, (match: string, tag: string | undefined) => {
+	const source = (previewFields ? markPreviewFields(template, previewFields, null) : template).replace(/<!--[\s\S]*?-->|{{\s*([^{}]*?)\s*}}/g, (match: string, tag: string | undefined) => {
 		if (tag === undefined) return match;
 		const key = tag.trim();
 		if (key.includes(':')) {

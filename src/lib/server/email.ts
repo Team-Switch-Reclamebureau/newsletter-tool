@@ -51,20 +51,46 @@ export async function readEmailSettings(pool: Pool): Promise<EmailSettings> {
 	};
 }
 
-export async function sendEmail(pool: Pool, secret: string, to: string, subject: string, text: string) {
+async function emailTransport(pool: Pool, secret: string) {
 	const row = await readSmtpRow(pool);
 	if (!row.host || !row.from_email) throw new Error('Configure SMTP in Admin settings before sending email.');
 	const transport = nodemailer.createTransport({
+		pool: true, maxConnections: 3,
 		host: row.host, port: row.port, secure: row.security === 'tls',
 		requireTLS: row.security === 'starttls', ignoreTLS: row.security === 'none',
 		...(row.username ? { auth: { user: row.username, pass: decryptSmtpPassword(row.password_encrypted, secret) } } : {}),
 		connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
 		disableFileAccess: true, disableUrlAccess: true
 	});
+	return { transport, from: { name: row.from_name, address: row.from_email } };
+}
+
+async function deliverEmail(sender: Awaited<ReturnType<typeof emailTransport>>, to: string, subject: string, text: string, html?: string) {
+	const result = await sender.transport.sendMail({ from: sender.from, to, subject, text, ...(html === undefined ? {} : { html }) });
+	if (!result.accepted.length || result.rejected.length) throw new Error('The SMTP server rejected the recipient.');
+}
+
+export async function sendEmail(pool: Pool, secret: string, to: string, subject: string, text: string) {
+	const sender = await emailTransport(pool, secret);
+	try { await deliverEmail(sender, to, subject, text); }
+	finally { sender.transport.close(); }
+}
+
+export async function sendNewsletterTest(pool: Pool, secret: string, recipients: string[], subject: string, text: string, html: string) {
+	const sender = await emailTransport(pool, secret);
 	try {
-		const result = await transport.sendMail({
-			from: { name: row.from_name, address: row.from_email }, to, subject, text
-		});
-		if (!result.accepted.length || result.rejected.length) throw new Error('The SMTP server rejected the recipient.');
-	} finally { transport.close(); }
+		const outcomes = await Promise.all(recipients.map(async (recipient) => {
+			try {
+				await deliverEmail(sender, recipient, subject, text, html);
+				return { recipient, accepted: true };
+			} catch (cause) {
+				console.error('Newsletter test delivery failed:', recipient, cause instanceof Error ? cause.message : 'Unknown delivery error');
+				return { recipient, accepted: false };
+			}
+		}));
+		return {
+			accepted: outcomes.filter((outcome) => outcome.accepted).map((outcome) => outcome.recipient),
+			failed: outcomes.filter((outcome) => !outcome.accepted).map((outcome) => outcome.recipient)
+		};
+	} finally { sender.transport.close(); }
 }

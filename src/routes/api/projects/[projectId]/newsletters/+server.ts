@@ -8,7 +8,7 @@ export const GET = api(async (event) => {
 	const projectId = uuid(event.params.projectId);
 	await requireProject(pool, projectId, user.id);
 	const result = await pool.query<NewsletterRow & { public_id: string }>('SELECT id, content, revision, public_id FROM newsletters WHERE project_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC, id', [projectId]);
-	return json({ newsletters: result.rows.map((row) => ({ newsletter: row.content, revision: row.revision, permalink: newsletterHtmlUrl(config.origin, row.public_id) })) });
+	return json({ newsletters: result.rows.map((row) => ({ newsletter: newsletterInput(row.content), revision: row.revision, permalink: newsletterHtmlUrl(config.origin, row.public_id) })) });
 });
 
 export const POST = api(async (event) => {

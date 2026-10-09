@@ -2,7 +2,6 @@ export type FieldType = 'text' | 'textarea' | 'url' | 'image' | 'number';
 export interface TemplateField {
 	name: string;
 	type: FieldType;
-	typed: boolean;
 }
 export type FieldValues = Record<string, string>;
 export type FieldScope = 'template' | 'item';
@@ -11,9 +10,6 @@ const types: readonly string[] = ['text', 'textarea', 'url', 'image', 'number'];
 function isFieldType(value: string): value is FieldType {
 	return types.includes(value);
 }
-const legacy: Record<string, FieldType> = {
-	image: 'image', image_alt: 'text', title: 'text', text: 'textarea', button: 'text', url: 'url'
-};
 
 export function validFieldName(name: string): boolean {
 	return /^[a-zA-Z][a-zA-Z0-9_.-]*$/.test(name)
@@ -34,22 +30,18 @@ export function templateFields(source: string, scope: FieldScope): { fields: Tem
 	const active = source.replace(/<!--[\s\S]*?-->/g, '');
 	for (const match of active.matchAll(/{{\s*([^{}]*?)\s*}}/g)) {
 		const tag = match[1].trim();
-		const typed = tag.includes(':');
 		let field: TemplateField;
-		if (typed) {
+		if (tag.includes(':')) {
 			const [type, name, extra] = tag.split(':').map((part) => part.trim());
 			if (!isFieldType(type) || !validFieldName(name ?? '') || extra !== undefined) {
 				return { fields: [], error: `Invalid placeholder {{${tag}}}. Use {{type:name}} with text, textarea, url, image, or number and a valid field name.` };
 			}
-			field = { name, type, typed: true };
+			field = { name, type };
 		} else {
 			if (scope === 'template' && ['items', 'newsletter_name'].includes(tag)) continue;
-			if (scope !== 'item' || !Object.hasOwn(legacy, tag)) {
-				return { fields: [], error: `Unknown ${scope} placeholder {{${tag}}}. Use ${scope === 'item' ? 'image, image_alt, title, text, button, url' : 'items, newsletter_name'} or {{type:name}}.` };
-			}
-			field = { name: tag, type: legacy[tag], typed: false };
+			return { fields: [], error: `Unknown ${scope} placeholder {{${tag}}}. Use ${scope === 'template' ? '{{items}}, {{newsletter_name}}, or ' : ''}{{type:name}}. Untyped content fields are not supported.` };
 		}
-		const previous = fields.find((entry) => entry.name === field.name && entry.typed === field.typed);
+		const previous = fields.find((entry) => entry.name === field.name);
 		if (previous && previous.type !== field.type) {
 			return { fields: [], error: `Field "${field.name}" has conflicting types in the ${scope}.` };
 		}

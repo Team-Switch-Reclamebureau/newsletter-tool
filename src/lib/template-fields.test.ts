@@ -5,7 +5,7 @@ describe('template field discovery', () => {
 	it('supports spaced image tags in both template scopes', () => {
 		for (const scope of ['template', 'item'] as const) {
 			expect(templateFields('{{ image:hero_image }}', scope)).toEqual({
-				fields: [{ name: 'hero_image', type: 'image', typed: true }], error: null
+				fields: [{ name: 'hero_image', type: 'image' }], error: null
 			});
 		}
 	});
@@ -18,15 +18,13 @@ describe('template field discovery', () => {
 		]);
 	});
 
-	it('supports legacy tags and ignores commented placeholders', () => {
+	it('supports template metadata and ignores commented placeholders, but rejects untyped content', () => {
 		expect(templateFields('{{items}}{{newsletter_name}}<!-- {{bad:tag}} -->{{text:heading}}', 'template').fields).toEqual([
-			{ name: 'heading', type: 'text', typed: true }
+			{ name: 'heading', type: 'text' }
 		]);
-		expect(templateFields('{{title}}{{text}}{{text:title}}', 'item').fields).toEqual([
-			{ name: 'title', type: 'text', typed: false },
-			{ name: 'text', type: 'textarea', typed: false },
-			{ name: 'title', type: 'text', typed: true }
-		]);
+		for (const tag of ['image', 'image_alt', 'title', 'text', 'button', 'url']) {
+			expect(templateFields(`{{${tag}}}`, 'item').error).toContain('Untyped content fields are not supported');
+		}
 	});
 
 	it('rejects conflicting types, unsupported types, names and scopes', () => {
@@ -51,16 +49,16 @@ describe('template field values', () => {
 
 	it('allows empty fields and validates URLs and finite numbers', () => {
 		for (const type of ['url', 'image', 'number'] as const) {
-			expect(fieldError({ name: 'value', type, typed: true }, '')).toBeNull();
+			expect(fieldError({ name: 'value', type }, '')).toBeNull();
 		}
 		for (const type of ['url', 'image'] as const) {
-			const field = { name: 'link', type, typed: true };
+			const field = { name: 'link', type };
 			expect(fieldError(field, 'https://example.com/a?b=1')).toBeNull();
 			for (const value of ['javascript:alert(1)', '/relative', 'https://user:password@example.com']) {
 				expect(fieldError(field, value)).toContain('http://');
 			}
 		}
-		const number = { name: 'price', type: 'number', typed: true } as const;
+		const number = { name: 'price', type: 'number' } as const;
 		for (const value of ['12', '-0.5', '.25', '1e3']) expect(fieldError(number, value)).toBeNull();
 		for (const value of ['Infinity', 'NaN', '0x10', ' ', '1e999', '12px']) expect(fieldError(number, value)).toContain('finite number');
 	});

@@ -2,8 +2,13 @@
 	import favicon from '#lib/assets/favicon.svg';
 	import type { LayoutProps } from './$types';
 	import { interfaceTheme } from '#lib/application-settings.js';
+	import { onDestroy } from 'svelte';
+	import Toasts from '#lib/Toasts.svelte';
+	import { provideToasts } from '#lib/toast-context.js';
 
 	let { children, data }: LayoutProps = $props();
+	const toasts = provideToasts();
+	onDestroy(toasts.destroy);
 </script>
 
 <svelte:head>
@@ -13,6 +18,7 @@
 
 <div class="application" style={data.settings ? interfaceTheme(data.settings.baseColor, data.settings.accentColor) : ''}>
 	{@render children()}
+	<Toasts {toasts} />
 </div>
 
 <style>

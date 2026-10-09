@@ -1,9 +1,17 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { renderMjml } from './api-client';
 	import type { RenderResult } from './server/render';
 	import { EMPTY_UTM, type UtmSettings } from './utm';
+	import type { PreviewField } from './preview-fields';
+	import { enablePreviewEditing } from './preview-dom';
 
-	let { source, error = '', name, utm = EMPTY_UTM }: { source: string; error?: string; name: string; utm?: UtmSettings } = $props();
+	let { source, error = '', name, utm = EMPTY_UTM, fields = [], onSelect, onUpdate }: {
+		source: string; error?: string; name: string; utm?: UtmSettings;
+		fields?: PreviewField[];
+		onSelect?: (id: string) => void;
+		onUpdate?: (id: string, value: string) => void;
+	} = $props();
 	let html = $state('');
 	let message = $state('');
 	let warnings = $state<RenderResult['errors']>([]);
@@ -11,13 +19,30 @@
 	let mobile = $state(false);
 	let retry = $state(0);
 	let version = 0;
+	let editing = $state(false);
+	let frame = $state<HTMLIFrameElement>();
+	let cleanupEditing: (() => void) | undefined;
+	let scrollTop = 0;
+	const editable = $derived(Boolean(onSelect && onUpdate));
+
+	function frameLoaded() {
+		cleanupEditing?.();
+		const document = frame?.contentDocument;
+		if (!editable || !document || !onSelect || !onUpdate) return;
+		frame?.contentWindow?.scrollTo(0, scrollTop);
+		cleanupEditing = enablePreviewEditing(document, fields, onSelect, onUpdate, (value) => editing = value);
+	}
+
+	$effect(() => () => cleanupEditing?.());
 
 	$effect(() => {
 		const mjml = source;
 		const inputError = error;
 		const tracking = { ...utm };
 		retry;
+		if (editing) return;
 		const current = ++version;
+		if (editable) scrollTop = untrack(() => frame?.contentDocument?.documentElement.scrollTop ?? scrollTop);
 		html = '';
 		message = inputError;
 		warnings = [];
@@ -46,11 +71,11 @@
 	<div class="canvas" class:mobile>
 		{#if loading}<p role="status">Putting your preview together…</p>
 		{:else if message}<div class="error" role="alert"><strong>Something needs a look</strong><p>{message}</p>{#if !error}<button onclick={() => retry++}>Try again</button>{/if}</div>
-		{:else if html}<iframe title={`${name} newsletter preview`} srcdoc={html} sandbox="" referrerpolicy="no-referrer"></iframe>
+		{:else if html}<iframe bind:this={frame} onload={frameLoaded} title={`${name} newsletter preview`} srcdoc={html} sandbox={editable ? 'allow-same-origin' : ''} referrerpolicy="no-referrer"></iframe>
 		{:else}<p>No preview available.</p>{/if}
 	</div>
 	{#if warnings.length}<details><summary>{warnings.length} MJML validation warnings</summary><ul>{#each warnings as warning}<li>{warning.message}</li>{/each}</ul></details>{/if}
-	<div class="footer">{mobile ? '375px mobile viewport' : 'Desktop viewport'} · Template + newsletter content</div>
+	<div class="footer">{mobile ? '375px mobile viewport' : 'Desktop viewport'} · {editable ? 'Type in text · Click images and links to edit · Scripts and navigation disabled' : 'Template + newsletter content'}</div>
 </section>
 
 <style>

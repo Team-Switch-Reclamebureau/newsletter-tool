@@ -10,6 +10,13 @@ export const DEFAULT_TEMPLATE = `<mjml>
   </mj-body>
 </mjml>`;
 
+export const DEFAULT_ITEM_SNIPPET = `<mj-section><mj-column>
+<mj-image src="{{image:image}}" alt="{{text:image_alt}}" />
+<mj-text font-size="24px" font-weight="bold">{{text:title}}</mj-text>
+<mj-text>{{textarea:text}}</mj-text>
+<mj-button href="{{url:url}}">{{text:button}}</mj-button>
+</mj-column></mj-section>`;
+
 export interface RemoteProject {
 	id: string;
 	name: string;

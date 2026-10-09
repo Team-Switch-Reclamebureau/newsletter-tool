@@ -1,15 +1,21 @@
 <script lang="ts">
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import type { PageData } from './$types';
-	import NewsletterEditor from '#lib/NewsletterEditor.svelte';
+	import ContentEditor from '#lib/ContentEditor.svelte';
+	import UserMenu from '#lib/UserMenu.svelte';
+	import WorkspaceSidebar from '#lib/WorkspaceSidebar.svelte';
 	import NewsletterPreview from '#lib/NewsletterPreview.svelte';
 	import EditionTable from '#lib/EditionTable.svelte';
 	import { jsonRequest, requestJson } from '#lib/api-client.js';
 	import { cloneNewsletter, composeNewsletter, createItem, createNewsletter, parseNewsletter, serializeNewsletter, type Newsletter } from '#lib/newsletters.js';
 	import { readSource } from '#lib/files.js';
 	import { uploadImages, type ImageUploadResult } from '#lib/image-uploads.js';
-	import { MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ImageScope, type ProjectMember, type RemoteProject } from '#lib/remote.js';
+	import { DEFAULT_ITEM_SNIPPET, MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ImageScope, type ProjectMember, type RemoteProject } from '#lib/remote.js';
+	import { templateFields } from '#lib/template-fields.js';
+	import type { EditorLayout, UserPreferences } from '#lib/user-preferences.js';
 	import { EMPTY_UTM, UTM_KEYS } from '#lib/utm.js';
+	import { useToasts } from '#lib/toast-context.js';
+	import { MAX_TEST_RECIPIENTS, MAX_TEST_RECIPIENTS_LENGTH, type TestEmailResult, type TestRecipientsSettings } from '#lib/test-recipients.js';
 
 	interface Draft {
 		newsletter: Newsletter;
@@ -32,7 +38,6 @@
 		assets: ImageAsset[];
 		members: ProjectMember[] | null;
 		membersLoading: boolean;
-		membersError: string;
 		addingMember: boolean;
 		templateSaving: boolean;
 		uploading: boolean;
@@ -41,18 +46,21 @@
 		libraryUploadDestination: string;
 		deletingAssetId: string | null;
 		deletingEditionId: string | null;
-		message: string;
+		testRecipients: string;
+		testRecipientsSettings: TestRecipientsSettings;
+		testRecipientsSaving: boolean;
+		testEmailSending: boolean;
 	}
 	type Mode = 'editions' | 'templates' | 'project-images' | 'sharing'
-		| 'content' | 'edition-settings' | 'edition-images';
+		| 'content' | 'edition-settings' | 'edition-images' | 'edition-publish';
 
 	let { data }: { data: PageData } = $props();
+	const toasts = useToasts();
 	let projects = $state<RemoteProject[]>([]);
 	let contexts = $state<Record<string, ProjectContext>>({});
 	let projectId = $state('');
 	let mode = $state<Mode>('editions');
 	let loading = $state(false);
-	let apiError = $state('');
 	let newProject = $state(false);
 	let projectName = $state('');
 	let creatingProject = $state(false);
@@ -60,13 +68,17 @@
 	let editionName = $state('');
 	let cloneSourceId = $state<string | null>(null);
 	let memberEmail = $state('');
+	let editorLayout = $state<EditorLayout>('split');
+	let layoutSaving = $state(false);
+	let signingOut = $state(false);
+	let sidebarOpen = $state(false);
 	let leaving = false;
 	let selectionVersion = 0;
 	const context = $derived(contexts[projectId]);
 	const currentDeletion = $derived(context?.deletingEditionId !== null && context?.deletingEditionId !== undefined);
 	const selected = $derived(projects.find((project) => project.id === projectId));
 	const draft = $derived(context?.drafts.find((entry) => entry.newsletter.id === context.activeId));
-	const editionView = $derived(mode === 'content' || mode === 'edition-settings' || mode === 'edition-images');
+	const editionView = $derived(mode === 'content' || mode === 'edition-settings' || mode === 'edition-images' || mode === 'edition-publish');
 	const availableAssets = $derived([...(context?.assets ?? []), ...(draft?.editionAssets ?? [])].filter((asset) => asset.id !== context?.deletingAssetId));
 	const libraryAssets = $derived(editionView ? draft?.editionAssets ?? [] : context?.assets ?? []);
 	const localImageReferences = $derived.by(() => {
@@ -75,7 +87,6 @@
 			const sources = [current.template, current.snippet];
 			for (const entry of current.drafts) {
 				sources.push(serializeNewsletter(entry.newsletter));
-				for (const item of entry.newsletter.items) if (item.imageAssetId) ids.add(item.imageAssetId);
 			}
 			for (const source of sources) {
 				for (const match of source.matchAll(/\/media\/([a-f0-9-]{36})\.webp/gi)) {
@@ -88,16 +99,20 @@
 	const composition = $derived(context ? composeNewsletter(context.template, context.snippet || null, editionView ? draft?.newsletter ?? null : null) : { source: '', error: null });
 	const dirty = $derived(draft ? serializeNewsletter(draft.newsletter) !== draft.snapshot : false);
 	const templateDirty = $derived(context ? templateSnapshot(context) !== context.projectSnapshot : false);
+	const recipientsDirty = $derived(context ? testRecipientsDirty(context) : false);
 	const unsaved = $derived(Object.values(contexts).some((value) =>
 		templateSnapshot(value) !== value.projectSnapshot
+		|| testRecipientsDirty(value)
 		|| value.drafts.some((entry) => serializeNewsletter(entry.newsletter) !== entry.snapshot)));
 
 	$effect(() => { projects = data.projects.map((project) => ({ ...project })); });
+	$effect(() => { editorLayout = data.preferences.editorLayout; });
 	$effect(() => { if (data.user && projects.length && !projectId) void selectProject(projects[0].id); });
 
 	beforeNavigate((navigation) => {
 		if (unsaved && !leaving && !window.confirm('You have unsaved changes. Leave this workspace and discard them?')) navigation.cancel();
 	});
+	afterNavigate(() => { sidebarOpen = false; });
 
 	function beforeUnload(event: BeforeUnloadEvent) {
 		if (unsaved) { event.preventDefault(); event.returnValue = ''; }
@@ -107,23 +122,42 @@
 		return JSON.stringify({ name: value.name, template: value.template, snippet: value.snippet });
 	}
 
+	function testRecipientsDirty(value: ProjectContext) {
+		return value.testRecipients !== value.testRecipientsSettings.recipients.join(', ');
+	}
+
 	function message(cause: unknown) {
 		return cause instanceof Error ? cause.message : 'The operation failed. Please try again.';
 	}
 
+	async function setEditorLayout(layout: EditorLayout) {
+		if (layoutSaving || layout === editorLayout) return;
+		const previous = editorLayout;
+		editorLayout = layout;
+		layoutSaving = true;
+		try {
+			const result = await requestJson<{ preferences: UserPreferences }>('/api/account/preferences', jsonRequest('PATCH', { editorLayout: layout }));
+			editorLayout = result.preferences.editorLayout;
+		} catch (cause) {
+			editorLayout = previous;
+			toasts.error(`Your editor layout could not be saved. ${message(cause)}`);
+		} finally { layoutSaving = false; }
+	}
+
 	async function selectProject(id: string) {
+		sidebarOpen = false;
 		const version = ++selectionVersion;
 		projectId = id;
-		apiError = '';
 		newEdition = false;
 		cloneSourceId = null;
 		memberEmail = '';
 		if (contexts[id]) { loading = false; mode = 'editions'; return; }
 		loading = true;
 		try {
-			const [editions, images] = await Promise.all([
+			const [editions, images, recipients] = await Promise.all([
 				requestJson<{ newsletters: { newsletter: Newsletter; revision: number; permalink: string }[] }>(`/api/projects/${id}/newsletters`),
-				requestJson<{ assets: ImageAsset[]; editionAssets: Record<string, ImageAsset[]> }>(`/api/projects/${id}/assets?includeEditions=true`)
+				requestJson<{ assets: ImageAsset[]; editionAssets: Record<string, ImageAsset[]> }>(`/api/projects/${id}/assets?includeEditions=true`),
+				requestJson<{ settings: TestRecipientsSettings }>(`/api/projects/${id}/test-recipients`)
 			]);
 			if (version !== selectionVersion) return;
 			const project = projects.find((project) => project.id === id);
@@ -137,28 +171,28 @@
 				})),
 				activeId: null,
 				assets: images.assets,
-				members: null, membersLoading: false, membersError: '', addingMember: false,
+				members: null, membersLoading: false, addingMember: false,
 				templateSaving: false, uploading: false, libraryUploadTotal: 0, libraryUploads: [],
 				libraryUploadDestination: '',
 				deletingAssetId: null, deletingEditionId: null,
-				message: ''
+				testRecipients: recipients.settings.recipients.join(', '), testRecipientsSettings: recipients.settings,
+				testRecipientsSaving: false, testEmailSending: false
 			};
 			mode = 'editions';
-		} catch (cause) { if (version === selectionVersion) apiError = message(cause); }
+		} catch (cause) { if (version === selectionVersion) toasts.error(message(cause)); }
 		finally { if (version === selectionVersion) loading = false; }
 	}
 
 	async function createProject(event: SubmitEvent) {
 		event.preventDefault();
 		creatingProject = true;
-		apiError = '';
 		try {
 			const result = await requestJson<{ project: RemoteProject }>('/api/projects', jsonRequest('POST', { name: projectName }));
 			projects = [...projects, result.project];
 			projectName = '';
 			newProject = false;
 			await selectProject(result.project.id);
-		} catch (cause) { apiError = message(cause); }
+		} catch (cause) { toasts.error(message(cause)); }
 		finally { creatingProject = false; }
 	}
 
@@ -172,7 +206,7 @@
 
 	function beginEdition(id: string | null = null) {
 		const source = context?.drafts.find((entry) => entry.newsletter.id === id);
-		if (id && !source) { apiError = 'The source edition is no longer available. Reload the project before cloning.'; return; }
+		if (id && !source) { toasts.error('The source edition is no longer available. Reload the project before cloning.'); return; }
 		cloneSourceId = source?.newsletter.id ?? null;
 		editionName = source ? `${source.newsletter.name.slice(0, 155)} copy` : '';
 		newEdition = true;
@@ -182,13 +216,12 @@
 		const current = context;
 		const entry = current?.drafts.find((value) => value.newsletter.id === id);
 		if (!current || !entry) return;
-		apiError = '';
-		if (current.deletingEditionId || current.uploading || current.deletingAssetId || current.templateSaving || current.drafts.some((value) => value.saving)) {
-			apiError = 'Wait for the current edition or image operation before deleting.';
+		if (current.deletingEditionId || current.uploading || current.deletingAssetId || current.templateSaving || current.testEmailSending || current.drafts.some((value) => value.saving)) {
+			toasts.error('Wait for the current edition or image operation before deleting.');
 			return;
 		}
 		if (entry.revision && current.drafts.some((value) => !value.revision && value.cloneSourceId === id)) {
-			apiError = 'Save or delete this edition’s unsaved clones before deleting their source.';
+			toasts.error('Save or delete this edition’s unsaved clones before deleting their source.');
 			return;
 		}
 		if (entry.revision) {
@@ -196,8 +229,8 @@
 				...(value.template !== value.project.template || value.snippet !== (value.project.itemTemplate ?? '') ? [value.template, value.snippet] : []),
 				...value.drafts.filter((value) => value !== entry && serializeNewsletter(value.newsletter) !== value.snapshot).map((value) => serializeNewsletter(value.newsletter))
 			]);
-			if (entry.editionAssets.some((asset) => sources.some((source) => source.includes(`/media/${asset.id}.webp`) || source.includes(`"imageAssetId": "${asset.id}"`)))) {
-				apiError = 'This edition’s images are referenced in another draft or a template. Save those changes or remove the references before deleting.';
+			if (entry.editionAssets.some((asset) => sources.some((source) => source.includes(`/media/${asset.id}.webp`)))) {
+				toasts.error('This edition’s images are referenced in another draft or a template. Save those changes or remove the references before deleting.');
 				return;
 			}
 		}
@@ -207,8 +240,8 @@
 			if (entry.revision) {
 				const result = await requestJson<{ deletedAssetIds: string[]; message: string }>(`/api/projects/${current.project.id}/newsletters/${id}`, jsonRequest('DELETE', { revision: entry.revision }));
 				for (const value of current.drafts) value.editionAssets = value.editionAssets.filter((asset) => !result.deletedAssetIds.includes(asset.id));
-				current.message = result.message;
-			} else current.message = 'Unsaved edition discarded.';
+				toasts.success(result.message);
+			} else toasts.success('Unsaved edition discarded.');
 			current.drafts = current.drafts.filter((value) => value !== entry);
 			if (current.activeId === id) current.activeId = null;
 			if (context === current) {
@@ -216,7 +249,7 @@
 				newEdition = false;
 				cloneSourceId = null;
 			}
-		} catch (cause) { apiError = message(cause); }
+		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.deletingEditionId = null; }
 	}
 
@@ -241,9 +274,9 @@
 		if (!context || !editionName.trim()) return;
 		if (cloneSourceId) {
 			const source = context.drafts.find((entry) => entry.newsletter.id === cloneSourceId);
-			if (!source) { apiError = 'The source edition is no longer available. Choose an edition to clone again.'; return; }
+			if (!source) { toasts.error('The source edition is no longer available. Choose an edition to clone again.'); return; }
 			addDraft(cloneNewsletter(source.newsletter, editionName), context, source);
-			context.message = 'Edition cloned as a new draft. Save it to persist it on the server.';
+			toasts.success('Edition cloned as a new draft. Save it to persist it on the server.');
 		} else addDraft(createNewsletter(editionName));
 	}
 
@@ -267,8 +300,8 @@
 			entry.snapshot = serializeNewsletter(result.newsletter);
 			if (serializeNewsletter(entry.newsletter) === submitted) entry.newsletter = result.newsletter;
 			else entry.newsletter = { ...entry.newsletter, createdAt: result.newsletter.createdAt, updatedAt: result.newsletter.updatedAt };
-			current.message = 'Newsletter saved. Its HTML permalink now reflects the latest saved edition.';
-		} catch (cause) { entry.error = message(cause); }
+			toasts.success('Newsletter saved. Its HTML permalink now reflects the latest saved edition.');
+		} catch (cause) { entry.error = message(cause); toasts.error(entry.error); }
 		finally { entry.saving = false; }
 	}
 
@@ -283,29 +316,15 @@
 			link.download = `${draft.newsletter.id}.json`;
 			link.click();
 			setTimeout(() => URL.revokeObjectURL(url), 1000);
-		} catch (cause) { draft.error = message(cause); }
-	}
-
-	async function importEdition(input: HTMLInputElement) {
-		const file = input.files?.[0];
-		const current = context;
-		if (!file || !current) return;
-		apiError = '';
-		try {
-			const newsletter = parseNewsletter(await readSource(file));
-			const source = current.drafts.find((entry) => entry.newsletter.id === newsletter.id);
-			addDraft({ ...newsletter, id: crypto.randomUUID() }, current, source);
-		} catch (cause) { apiError = message(cause); }
-		finally { input.value = ''; }
+		} catch (cause) { draft.error = message(cause); toasts.error(draft.error); }
 	}
 
 	async function loadTemplate(input: HTMLInputElement, target: 'template' | 'snippet') {
 		const file = input.files?.[0];
 		const current = context;
 		if (!file || !current) return;
-		apiError = '';
 		try { current[target] = await readSource(file); }
-		catch (cause) { apiError = message(cause); }
+		catch (cause) { toasts.error(message(cause)); }
 		finally { input.value = ''; }
 	}
 
@@ -314,7 +333,6 @@
 		if (!context || context.templateSaving) return;
 		const current = context;
 		current.templateSaving = true;
-		apiError = '';
 		const submitted = templateSnapshot(current);
 		try {
 			const result = await requestJson<{ project: RemoteProject }>(`/api/projects/${current.project.id}`, jsonRequest('PATCH', {
@@ -328,8 +346,8 @@
 				current.snippet = result.project.itemTemplate ?? '';
 			}
 			projects = projects.map((project) => project.id === result.project.id ? result.project : project);
-			current.message = 'Project settings and templates saved.';
-		} catch (cause) { apiError = message(cause); }
+			toasts.success('Project settings and templates saved.');
+		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.templateSaving = false; }
 	}
 
@@ -352,33 +370,44 @@
 		current.libraryUploads = [];
 		try {
 			const asset = await storeImage(current, file, edition);
-			current.message = 'Image uploaded. Its public URL will remain unchanged.';
 			return asset;
 		} finally { current.uploading = false; }
 	}
 
-	async function uploadItemImage(newsletterId: string, itemId: string, file: File, scope: ImageScope) {
+	async function uploadItemImage(newsletterId: string, itemId: string, fieldName: string, file: File, scope: ImageScope) {
 		const current = context;
 		if (!current) throw new Error('Choose a project first.');
 		const entry = current.drafts.find((entry) => entry.newsletter.id === newsletterId);
 		if (scope === 'edition' && !entry?.revision) throw new Error('Save this edition before uploading edition images.');
 		const asset = await uploadImage(current, file, scope === 'edition' ? entry : undefined);
 		if (!entry?.newsletter.items.some((item) => item.id === itemId)) {
-			current.message = 'Image uploaded to the library. The original item no longer exists.';
+			toasts.success('Image uploaded to the library. The original item no longer exists.');
 			return;
 		}
-		entry.newsletter.items = entry.newsletter.items.map((item) => item.id === itemId ? { ...item, image: asset.url, imageAssetId: asset.id } : item);
+		entry.newsletter.items = entry.newsletter.items.map((item) => item.id === itemId ? { ...item, fields: { ...item.fields, [fieldName]: asset.url } } : item);
+		toasts.success('Image uploaded. Its public URL will remain unchanged.');
+	}
+
+	function itemImageField() {
+		return templateFields(context?.snippet || DEFAULT_ITEM_SNIPPET, 'item').fields.find((field) => field.type === 'image');
+	}
+
+	function addImageItem(asset: ImageAsset) {
+		const field = itemImageField();
+		if (!draft || !field) { toasts.error('Add a typed image field to the item template before adding an image as an item.'); return; }
+		draft.newsletter.items.push({ ...createItem(), fields: { [field.name]: asset.url } });
+		draft.error = '';
+		mode = 'content';
 	}
 
 	async function uploadLibraryImages(input: HTMLInputElement) {
 		const files = Array.from(input.files ?? []);
 		const current = context;
 		if (!files.length || !current) return;
-		apiError = '';
-		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { apiError = 'An image or edition operation is already in progress. Please wait.'; input.value = ''; return; }
+		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { toasts.error('An image or edition operation is already in progress. Please wait.'); input.value = ''; return; }
 		const edition = editionView ? draft : undefined;
 		if (editionView && !edition?.revision) {
-			apiError = 'Open and save an edition before uploading edition images.';
+			toasts.error('Open and save an edition before uploading edition images.');
 			input.value = '';
 			return;
 		}
@@ -386,13 +415,16 @@
 		current.libraryUploadTotal = files.length;
 		current.libraryUploads = [];
 		current.libraryUploadDestination = edition ? `Edition: ${edition.newsletter.name}` : 'Project images';
-		current.message = '';
 		try {
 			await uploadImages(files, (file) => storeImage(current, file, edition), (result) => {
 				current.libraryUploads = [...current.libraryUploads, result];
 			});
+			const uploaded = current.libraryUploads.filter((result) => result.status === 'uploaded').length;
+			const failed = current.libraryUploads.length - uploaded;
+			if (uploaded) toasts.success(`${uploaded} of ${files.length} images uploaded.`);
+			if (failed) toasts.error(`${failed} images could not be uploaded. See the upload results for details.`);
 		}
-		catch (cause) { apiError = message(cause); }
+		catch (cause) { toasts.error(message(cause)); }
 		finally { current.uploading = false; input.value = ''; }
 	}
 
@@ -403,15 +435,14 @@
 	async function deleteLibraryImage(asset: ImageAsset) {
 		const current = context;
 		if (!current) return;
-		apiError = '';
-		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { apiError = 'An image or edition operation is already in progress. Please wait.'; return; }
+		if (current.uploading || current.deletingAssetId || current.deletingEditionId) { toasts.error('An image or edition operation is already in progress. Please wait.'); return; }
 		const edition = editionView ? draft : undefined;
 		if (editionView && !edition?.revision) {
-			apiError = 'Save this edition before removing images from its library.';
+			toasts.error('Save this edition before removing images from its library.');
 			return;
 		}
 		if (imageUsedInDrafts(asset)) {
-			apiError = 'This image is used in edition content or a template. Remove those references and save before deleting it.';
+			toasts.error('This image is used in edition content or a template. Remove those references and save before deleting it.');
 			return;
 		}
 		if (!window.confirm(`Delete "${asset.filename}" from ${edition ? `edition "${edition.newsletter.name}"` : 'the project library'}? Its file will be permanently deleted if no other libraries use it. Images used in current saved editions or templates are protected. Previously imported Mailchimp campaigns do not protect unused files.`)) return;
@@ -432,8 +463,8 @@
 					}
 				}
 			}
-			current.message = result.message;
-		} catch (cause) { apiError = `${asset.filename}: ${message(cause)}`; }
+			toasts.success(result.message);
+		} catch (cause) { toasts.error(`${asset.filename}: ${message(cause)}`); }
 		finally { current.deletingAssetId = null; }
 	}
 
@@ -441,11 +472,10 @@
 		const current = context;
 		if (!current || current.membersLoading || current.addingMember) return;
 		current.membersLoading = true;
-		current.membersError = '';
 		try {
 			const result = await requestJson<{ members: ProjectMember[] }>(`/api/projects/${current.project.id}/members`);
 			current.members = result.members;
-		} catch (cause) { current.membersError = message(cause); }
+		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.membersLoading = false; }
 	}
 
@@ -460,52 +490,82 @@
 		if (!current || current.addingMember || current.membersLoading) return;
 		const email = memberEmail;
 		current.addingMember = true;
-		apiError = '';
-		current.message = '';
-		current.membersError = '';
 		try {
 			const result = await requestJson<{ members: ProjectMember[]; message: string }>(`/api/projects/${current.project.id}/members`, jsonRequest('POST', { email }));
 			current.members = result.members;
-			current.membersError = '';
-			current.message = result.message;
+			toasts.success(result.message);
 			if (context === current && memberEmail === email) memberEmail = '';
-		} catch (cause) { current.membersError = message(cause); }
+		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.addingMember = false; }
 	}
 
 	async function copyPermalink(id: string) {
 		const current = context;
 		const entry = current?.drafts.find((entry) => entry.newsletter.id === id);
-		apiError = '';
-		if (!current || !entry?.permalink) { apiError = 'Save the edition first to create its HTML permalink.'; return; }
-		if (!navigator.clipboard?.writeText) { apiError = 'Clipboard access is unavailable. Open the edition and select its HTML permalink to copy it manually.'; return; }
+		if (!current || !entry?.permalink) { toasts.error('Save the edition first to create its HTML permalink.'); return; }
+		if (!navigator.clipboard?.writeText) { toasts.error('Clipboard access is unavailable. Open the edition and select its HTML permalink to copy it manually.'); return; }
 		try {
 			await navigator.clipboard.writeText(entry.permalink);
-			current.message = 'Public HTML permalink copied. Save edition or template changes to update the HTML at this same URL.';
-		} catch (cause) { apiError = message(cause); }
+			toasts.success('Public HTML permalink copied. Save edition or template changes to update the HTML at this same URL.');
+		} catch (cause) { toasts.error(message(cause)); }
+	}
+
+	async function saveTestRecipients(event: SubmitEvent) {
+		event.preventDefault();
+		const current = context;
+		if (!current || current.testRecipientsSaving || current.testEmailSending) return;
+		current.testRecipientsSaving = true;
+		try {
+			const result = await requestJson<{ settings: TestRecipientsSettings }>(
+				`/api/projects/${current.project.id}/test-recipients`,
+				jsonRequest('PATCH', { recipients: current.testRecipients, revision: current.testRecipientsSettings.revision }));
+			current.testRecipientsSettings = result.settings;
+			current.testRecipients = result.settings.recipients.join(', ');
+			toasts.success('Test recipients saved for every edition in this project.');
+		} catch (cause) { toasts.error(message(cause)); }
+		finally { current.testRecipientsSaving = false; }
+	}
+
+	async function sendTestEmail() {
+		const current = context;
+		const entry = draft;
+		if (!current || !entry || current.testEmailSending || current.testRecipientsSaving) return;
+		if (!entry.revision) { toasts.error('Save this edition before sending a test email.'); return; }
+		if (testRecipientsDirty(current)) { toasts.error('Save the project recipient list before sending.'); return; }
+		if (!current.testRecipientsSettings.recipients.length) { toasts.error('Add and save at least one project test recipient first.'); return; }
+		current.testEmailSending = true;
+		try {
+			const result = await requestJson<TestEmailResult>(
+				`/api/projects/${current.project.id}/newsletters/${entry.newsletter.id}/test-email`,
+				jsonRequest('POST', { recipientsRevision: current.testRecipientsSettings.revision }));
+			if (result.failed.length) toasts.error(result.message);
+			else toasts.success(result.message);
+		} catch (cause) { toasts.error(message(cause)); }
+		finally { current.testEmailSending = false; }
 	}
 
 	async function reloadProject() {
-		if (currentDeletion) { apiError = 'Wait for edition deletion to finish before reloading.'; return; }
+		if (currentDeletion) { toasts.error('Wait for edition deletion to finish before reloading.'); return; }
 		if (unsaved && !window.confirm('Export any drafts you want to keep. Reloading discards unsaved changes in the selected project. Continue?')) return;
-		apiError = '';
 		try {
 			const result = await requestJson<{ projects: RemoteProject[] }>('/api/projects');
 			projects = result.projects;
 			delete contexts[projectId];
 			await selectProject(projectId);
-		} catch (cause) { apiError = message(cause); }
+		} catch (cause) { toasts.error(message(cause)); }
 	}
 
 	async function logout() {
+		if (signingOut) return;
 		if (unsaved && !window.confirm('Sign out and discard unsaved changes?')) return;
-		apiError = '';
+		signingOut = true;
 		try {
 			await requestJson('/api/auth/sign-out', jsonRequest('POST', {}));
 			leaving = true;
 			contexts = {};
 			await goto('/login', { invalidateAll: true });
-		} catch (cause) { apiError = message(cause); }
+		} catch (cause) { toasts.error(message(cause)); }
+		finally { signingOut = false; }
 	}
 </script>
 
@@ -525,26 +585,41 @@
 	</main>
 {:else}
 	<div class="app">
-		<aside>
+		<WorkspaceSidebar bind:open={sidebarOpen}>
 			<a href="/" class="brand">{data.settings.applicationName}<span>.</span></a>
-			<div class="eyebrow">YOUR WORKSPACE</div>
-			<div class="workspace-card"><strong>{data.user?.name}</strong><small>{data.user?.email}</small></div>
 			<div class="project-heading"><span>PROJECTS</span><span>{projects.length}</span></div>
 			<nav aria-label="Newsletter projects">{#each projects as project (project.id)}<button class:chosen={projectId === project.id} onclick={() => selectProject(project.id)}>▤ <span>{project.name}</span></button>{/each}</nav>
-			<button class="secondary new-project" onclick={() => newProject = true}>+ New project</button>
+			<button class="secondary new-project" onclick={() => { newProject = true; sidebarOpen = false; }}>+ New project</button>
 			<div class="sidebar-footer">
-				<a class="admin-settings" href="/account">Change password</a>
-				{#if data.isAdmin}<a class="admin-settings" href="/admin">Admin settings</a>{/if}
-				<small>Private projects · Public HTML and images</small>
-				<button class="secondary" onclick={logout}>Sign out</button>
+				{#if data.user}<UserMenu name={data.user.name} email={data.user.email} isAdmin={data.isAdmin} {signingOut} onSignOut={logout} />{/if}
 			</div>
-		</aside>
+		</WorkspaceSidebar>
 		<main class="workspace">
-			<header class:project-header={!!selected}><span>Workspace / <strong>{selected?.name || 'Getting started'}</strong></span><span class="badge">TEAM SWITCH MJML STUDIO</span></header>
+			<header class:project-header={!!selected}>
+				<div class="workspace-location">
+					<button class="menu-toggle" aria-label="Open navigation menu" aria-controls="workspace-sidebar" aria-expanded={sidebarOpen} onclick={() => sidebarOpen = !sidebarOpen}>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg><span>Menu</span>
+					</button>
+					<nav class="breadcrumb" aria-label="Breadcrumb">
+						<ol>
+							<li aria-current={editionView && draft ? undefined : 'page'}>
+								{#if selected}<button class="project-link" title={selected.name} onclick={() => mode = 'editions'}>{selected.name}</button>
+								{:else}<span class="crumb-name">Getting started</span>{/if}
+							</li>
+							{#if editionView && draft}<li aria-current="page"><span class="crumb-name" title={draft.newsletter.name || 'Untitled newsletter'}>{draft.newsletter.name || 'Untitled newsletter'}</span></li>{/if}
+						</ol>
+					</nav>
+				</div>
+				{#if draft && editionView}
+					<div class="header-save save-actions">
+						<span role="status">{draft.saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'Saved to server'}</span>
+						<button class="primary" aria-label="Save newsletter" disabled={draft.saving || currentDeletion} onclick={saveEdition}>{#if draft.saving}Saving…{:else}Save<span class="save-detail">{' newsletter'}</span>{/if}</button>
+					</div>
+				{/if}
+			</header>
 			{#if !selected}
 				<div class="page-heading"><div><div class="eyebrow">A LITTLE LESS WORK. A BETTER EMAIL.</div><h1>Your next newsletter starts here<span>.</span></h1><p>One template. A new story with every edition.</p></div></div>
 			{/if}
-			{#if apiError}<p class="error notice" role="alert">{apiError}</p>{/if}
 			{#if newProject}
 				<form class="inline-form panel" onsubmit={createProject}><label for="project-name">Project name</label><input id="project-name" bind:value={projectName} maxlength="160" required /><button class="primary" disabled={creatingProject || !projectName.trim()}>{creatingProject ? 'Creating…' : 'Create project'}</button><button class="secondary" type="button" onclick={() => newProject = false}>Cancel</button></form>
 			{/if}
@@ -552,29 +627,13 @@
 			{:else if !context}
 				<section class="panel empty-state"><h2>A place for every project.</h2><p>Create a project to start with a ready-to-use MJML template, or import your own template afterwards.</p><button class="primary" onclick={() => newProject = true}>Create your first project</button>{#if selected}<button class="secondary" onclick={reloadProject}>Reload project</button>{/if}</section>
 			{:else}
-				{#if draft && editionView}
-				<section class="edition-bar" aria-label="Selected newsletter">
-					<div class="selected-edition"><button class="secondary" onclick={() => mode = 'editions'}>All editions</button><strong>{draft.newsletter.name || 'Untitled newsletter'}</strong><button class="secondary" onclick={() => beginEdition(draft.newsletter.id)} disabled={draft.saving || currentDeletion}>Clone edition</button><button class="secondary delete-image" onclick={() => deleteEdition(draft.newsletter.id)} disabled={draft.saving || currentDeletion || context.uploading || context.deletingAssetId !== null}>Delete edition</button></div>
-					<div class="save-actions">
-						{#if draft}<span role="status">{draft.saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'Saved to server'}</span><button class="primary" onclick={saveEdition} disabled={draft.saving || currentDeletion}>{draft.saving ? 'Saving…' : 'Save newsletter'}</button><button class="secondary" onclick={exportEdition}>Export JSON</button>{/if}
-					</div>
-				</section>
-				<section class="edition-export" aria-label="Edition HTML export">
-					{#if draft.permalink}
-						<label for="html-permalink">Public HTML permalink</label>
-						<div class="export-actions"><input id="html-permalink" value={draft.permalink} readonly onfocus={(event) => event.currentTarget.select()} /><button class="secondary" onclick={() => copyPermalink(draft.newsletter.id)}>Copy link</button><a class="secondary" href={draft.permalink} target="_blank" rel="noreferrer">Open HTML</a><a class="secondary" href={draft.permalink} download={`${draft.newsletter.id}.html`}>Download HTML</a></div>
-						<p>Always uses the latest saved edition, UTM settings, and project templates. Anyone with this link can access the HTML. Mailchimp must be able to reach this URL from the internet.</p>
-					{:else}<p>Save this edition to create its public HTML permalink.</p>{/if}
-				</section>
-				{/if}
 				{#if newEdition}<form class="inline-form panel" onsubmit={createEdition}><label for="edition-name">{cloneSourceId ? 'Cloned edition name' : 'Newsletter name'}</label><input id="edition-name" bind:value={editionName} maxlength="160" required /><button class="primary" disabled={!editionName.trim()}>{cloneSourceId ? 'Clone newsletter' : 'Create newsletter'}</button><button class="secondary" type="button" onclick={() => { newEdition = false; cloneSourceId = null; }}>Cancel</button></form>{/if}
-				{#if draft?.error && editionView}<p class="error notice" role="alert">{draft.error}</p>{/if}
-				{#if context.message}<p class="notice success" role="status">{context.message}</p>{/if}
 				<div class="project-tools"><div class="view-tabs" aria-label={editionView ? 'Edition views' : 'Project views'}>
 					{#if editionView}
 						<button class:active={mode === 'content'} onclick={() => mode = 'content'}>Content</button>
 						<button class:active={mode === 'edition-settings'} onclick={() => mode = 'edition-settings'}>Settings</button>
 						<button class:active={mode === 'edition-images'} onclick={() => mode = 'edition-images'}>Edition images ({draft?.editionAssets.length ?? 0})</button>
+						<button class:active={mode === 'edition-publish'} onclick={() => mode = 'edition-publish'}>Test &amp; publish</button>
 					{:else}
 						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}>Editions ({context.drafts.length})</button>
 						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}>Templates</button>
@@ -583,14 +642,13 @@
 					{/if}
 				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView}<button class="primary" onclick={() => beginEdition()}>+ New newsletter</button>{/if}</div></div>
 				{#if mode === 'editions'}
-					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} onCopyLink={copyPermalink} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
+					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.testEmailSending || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
 				{:else if mode === 'sharing'}
 					<section class="panel" aria-labelledby="sharing-heading">
 						<div class="panel-toolbar"><h2 id="sharing-heading">Share this project</h2></div>
 						<div class="member-list">
 							<div class="save-actions"><h3 id="members-heading">People with access{context.members ? ` (${context.members.length})` : ''}</h3><button class="secondary" disabled={context.membersLoading || context.addingMember} onclick={loadMembers}>Refresh members</button></div>
 							{#if context.membersLoading}<p role="status">Loading members…</p>{/if}
-							{#if context.membersError}<p class="error notice" role="alert">{context.membersError}</p>{/if}
 							{#if context.members}
 								<ul aria-labelledby="members-heading">
 									{#each context.members as member (member.id)}
@@ -606,9 +664,44 @@
 							<button class="secondary" disabled={context.addingMember || context.membersLoading || !memberEmail.trim()}>{context.addingMember ? 'Adding…' : 'Add member'}</button>
 						</form>
 					</section>
+				{:else if mode === 'edition-publish' && draft}
+					<section class="panel library" aria-labelledby="publish-heading">
+						<h2 id="publish-heading">Test &amp; publish</h2>
+						<section class="test-email" aria-labelledby="test-email-heading">
+							<h3 id="test-email-heading">Send a test email</h3>
+							<p>Tests use the latest saved edition and saved project templates, not unsaved edits. They use the sender and SMTP settings configured by an administrator.</p>
+							<form onsubmit={saveTestRecipients}>
+								<label for="test-recipients">Project test recipients</label>
+								<textarea id="test-recipients" rows="3" bind:value={context.testRecipients} maxlength={MAX_TEST_RECIPIENTS_LENGTH} disabled={context.testRecipientsSaving || context.testEmailSending} placeholder="person@example.com, colleague@example.com"></textarea>
+								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by every edition and member of the project. Each recipient receives a separate message.</p>
+								<div class="save-actions">
+									<button class="secondary" disabled={!recipientsDirty || context.testRecipientsSaving || context.testEmailSending}>{context.testRecipientsSaving ? 'Saving recipients...' : 'Save recipients'}</button>
+									<button class="primary" type="button" onclick={sendTestEmail} disabled={!draft.revision || draft.saving || currentDeletion || recipientsDirty || !context.testRecipientsSettings.recipients.length || context.testRecipientsSaving || context.testEmailSending}>{context.testEmailSending ? 'Sending test...' : 'Send test email'}</button>
+								</div>
+								{#if !draft.revision}<p>Save this edition before sending a test email.</p>{/if}
+								{#if recipientsDirty}<p>Save the recipient list before sending.</p>{/if}
+								<p>SMTP acceptance does not guarantee inbox delivery. Check the recipients' inboxes and spam folders.</p>
+							</form>
+						</section>
+						<h3>Publish via Mailchimp</h3>
+						<p>Import this edition into Mailchimp using its public HTML link. The link stays the same and reflects the latest saved newsletter.</p>
+						{#if dirty}<p class="notice" role="status">You have unsaved changes. Save the newsletter to update its public HTML.</p>{/if}
+						<section class="edition-export" aria-label="Edition HTML export">
+							{#if draft.permalink}
+								<label for="html-permalink">Public HTML permalink</label>
+								<div class="export-actions"><input id="html-permalink" value={draft.permalink} readonly onfocus={(event) => event.currentTarget.select()} /><button class="secondary" onclick={() => copyPermalink(draft.newsletter.id)}>Copy link</button><a class="secondary" href={draft.permalink} target="_blank" rel="noreferrer">Open HTML</a><a class="secondary" href={draft.permalink} download={`${draft.newsletter.id}.html`}>Download HTML</a></div>
+								<p>Always uses the latest saved edition, UTM settings, and project templates. Anyone with this link can access the HTML. Mailchimp must be able to reach this URL from the internet.</p>
+							{:else}
+								<p>Save this edition to create its public HTML permalink.</p>
+								<button class="primary" disabled={draft.saving || currentDeletion} onclick={saveEdition}>{draft.saving ? 'Saving...' : 'Save newsletter & create link'}</button>
+							{/if}
+						</section>
+						<button class="secondary" onclick={exportEdition}>Export JSON</button>
+					</section>
 				{:else if mode === 'edition-settings' && draft}
 					<section class="panel library"><h2>Edition settings</h2>
 						<form class="utm-form" onsubmit={(event) => { event.preventDefault(); void saveEdition(); }}>
+							<label for="edition-newsletter-name">Newsletter name</label><input id="edition-newsletter-name" value={draft.newsletter.name} oninput={(event) => { if (draft) { draft.newsletter.name = event.currentTarget.value; draft.error = ''; } }} maxlength="160" required disabled={draft.saving || currentDeletion} />
 							<h3>UTM link tracking</h3>
 							<p>Filled values are added to all HTTP(S) links in this edition, including links in its templates. Other query parameters and fragments are preserved. Images, mailto links, and anchor links are not tracked. Leave values blank to leave those parameters unchanged.</p>
 							{#each UTM_KEYS as key (key)}
@@ -629,34 +722,34 @@
 								{#each context.libraryUploads as result, index (index)}<li class:upload-failed={result.status === 'failed'}><strong>{result.filename}</strong>: {#if result.status === 'uploaded'}Uploaded{:else}<span role="alert">{result.error}</span>{/if}</li>{/each}
 							</ul>
 						{:else if context.uploading}<p role="status">Uploading image…</p>{/if}
-						<div class="asset-grid">{#each libraryAssets as asset (asset.id)}<article><img src={asset.url} alt={asset.filename} loading="lazy" /><strong>{asset.filename}</strong><small>{asset.width} × {asset.height} · {Math.ceil(asset.bytes / 1024)} KB · {asset.scope === 'edition' ? 'Edition image' : 'Project image'}</small><a href={asset.url} target="_blank" rel="noreferrer">Open public image ↗</a>{#if editionView && draft}<button class="secondary" disabled={context.deletingAssetId !== null} onclick={() => { if (draft) draft.newsletter.items.push({ ...createItem(), image: asset.url, imageAssetId: asset.id }); mode = 'content'; }}>Add as item</button>{/if}
+						<div class="asset-grid">{#each libraryAssets as asset (asset.id)}<article><img src={asset.url} alt={asset.filename} loading="lazy" /><strong>{asset.filename}</strong><small>{asset.width} × {asset.height} · {Math.ceil(asset.bytes / 1024)} KB · {asset.scope === 'edition' ? 'Edition image' : 'Project image'}</small><a href={asset.url} target="_blank" rel="noreferrer">Open public image ↗</a>{#if editionView && draft}<button class="secondary" disabled={context.deletingAssetId !== null || !itemImageField()} onclick={() => addImageItem(asset)}>Add as item</button>{#if !itemImageField()}<small>Add an image field to the item template to use this image in an item.</small>{/if}{/if}
 							<button class="secondary delete-image" aria-label={`Delete image ${asset.filename}`} disabled={context.uploading || context.deletingAssetId !== null || imageUsedInDrafts(asset) || (asset.scope === 'edition' && !draft?.revision)} onclick={() => deleteLibraryImage(asset)}>{context.deletingAssetId === asset.id ? 'Deleting…' : 'Delete image'}</button>
 							{#if imageUsedInDrafts(asset)}<small>Used in edition content or a template. Remove references and save first.</small>{/if}
 						</article>{/each}</div>
 						{#if !libraryAssets.length}<p>No images in this library yet. Upload them here or directly from an item.</p>{/if}
 					</section>
+				{:else if mode === 'content' && draft}
+					{#key draft.newsletter.id}
+						<ContentEditor newsletter={draft.newsletter} template={context.template} snippet={context.snippet || null} assets={availableAssets} canUploadEditionImages={draft.revision > 0} imageUploading={context.uploading || context.deletingAssetId !== null} layout={editorLayout} {layoutSaving} onLayoutChange={setEditorLayout} onUpdate={(newsletter) => { if (draft) { draft.newsletter = newsletter; draft.error = ''; } }} onImageUpload={uploadItemImage} />
+					{/key}
 				{:else}
 					<div class="editor-grid">
 						<section class="panel editor-panel" aria-label={mode === 'templates' ? 'Project templates' : 'Newsletter editor'}>
 							<div class="panel-toolbar"><h2>{mode === 'templates' ? 'Project templates' : 'Newsletter content'}</h2><small>{context.project.role === 'owner' ? 'Owner' : 'Editor'}</small></div>
-							{#if mode === 'content' && draft}<NewsletterEditor newsletter={draft.newsletter} template={context.template} snippet={context.snippet || null} assets={availableAssets} canUploadEditionImages={draft.revision > 0} imageUploading={context.uploading || context.deletingAssetId !== null} onUpdate={(newsletter) => { if (draft) { draft.newsletter = newsletter; draft.error = ''; } }} onImageUpload={uploadItemImage} />
-							{:else}
 								<form class="template-form" onsubmit={saveTemplates}>
 									<label for="template-project-name">Project name</label><input id="template-project-name" bind:value={context.name} maxlength="160" required />
 									<label for="project-template">Template MJML</label><textarea id="project-template" bind:value={context.template} rows="12" spellcheck="false"></textarea>
 									<p>Place exactly one <code>{'{{items}}'}</code> inside mj-body. Use <code>{'{{newsletter_name}}'}</code> for the edition name. Typed tags such as <code>{'{{text:headline}}'}</code> create newsletter-level fields.</p>
 									<label for="template-import">Import template.mjml</label><input id="template-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'template')} />
 									<label for="item-template">Item snippet MJML</label><textarea id="item-template" bind:value={context.snippet} rows="8" spellcheck="false" placeholder="Leave empty to use the default item layout."></textarea>
-									<p>Use <code>{'{{type:name}}'}</code> for per-item fields. Types: text, textarea, url, image, number. Legacy fields image, image_alt, title, text, button, and url still work in double braces. Upload shared images in Project images or edition-only images in Edition images, then select them in image fields.</p>
+									<p>Use <code>{'{{type:name}}'}</code> for per-item fields. Types: text, textarea, url, image, number. Untyped content placeholders are not supported. Upload shared images in Project images or edition-only images in Edition images, then select them in image fields.</p>
 									<label for="snippet-import">Import item.mjml</label><input id="snippet-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'snippet')} />
 									<div class="save-actions"><span>{templateDirty ? 'Unsaved project changes' : 'Project saved'}</span><button class="primary" disabled={context.templateSaving}>{context.templateSaving ? 'Saving…' : 'Save templates'}</button></div>
 								</form>
-							{/if}
 						</section>
 						<NewsletterPreview source={composition.source} error={composition.error ?? ''} name={(editionView ? draft?.newsletter.name : selected?.name) || 'Template'} utm={editionView ? draft?.newsletter.utm ?? EMPTY_UTM : EMPTY_UTM} />
 					</div>
 				{/if}
-				{#if !editionView}<div class="import-edition"><label for="edition-import">Import an existing newsletter JSON</label><input id="edition-import" type="file" accept=".json,application/json" onchange={(event) => importEdition(event.currentTarget)} /></div>{/if}
 			{/if}
 			<footer>Team Switch © 2026</footer>
 		</main>
@@ -669,27 +762,32 @@
 	:global(button) { font: inherit; cursor: pointer; }
 	:global(button:disabled) { cursor: default; opacity: .55; }
 	:global(button:focus-visible), :global(a:focus-visible), :global(input:focus-visible), :global(textarea:focus-visible), :global(select:focus-visible) { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
-	.brand { display: block; font-size: 29px; font-weight: 750; letter-spacing: -1.5px; color: var(--ui-accent, #425f30); text-decoration: none; margin-bottom: 38px; overflow-wrap: anywhere; }
+	.brand { display: block; font-size: 29px; font-weight: 750; letter-spacing: -1.5px; color: var(--ui-accent, #425f30); text-decoration: none; margin-bottom: 26px; overflow-wrap: anywhere; }
 	.brand span, h1 span { color: var(--ui-accent, #839e5d); }
 	.eyebrow { font-size: 9px; font-weight: 600; letter-spacing: 1.5px; color: var(--ui-muted, #839273); }
 	.app { display: flex; min-height: 100vh; }
-	aside { display: flex; flex-direction: column; width: 250px; flex-shrink: 0; background: var(--ui-soft, #eef0e9); border-right: 1px solid var(--ui-border, #dce1d6); padding: 32px 20px 22px; }
-	.workspace-card { padding: 14px; border: 1px solid var(--ui-border, #d2d9c9); border-radius: 8px; margin-top: 15px; overflow-wrap: anywhere; background: var(--ui-surface, #f7f9f2); }
-	.workspace-card strong { font-size: 12px; }
-	.workspace-card small { display: block; font-size: 10px; color: var(--ui-muted, #829075); margin-top: 6px; }
-	.project-heading { display: flex; justify-content: space-between; font-size: 10px; color: var(--ui-muted, #7b8971); letter-spacing: 1px; margin: 30px 8px 15px; }
+	nav { min-height: 0; overflow-y: auto; }
+	.project-heading { display: flex; justify-content: space-between; font-size: 10px; color: var(--ui-muted, #7b8971); letter-spacing: 1px; margin: 4px 8px 15px; }
 	nav button { width: 100%; display: flex; gap: 9px; background: transparent; border: 0; padding: 13px 10px; text-align: left; color: var(--ui-muted, #6d7a60); border-radius: 5px; margin-bottom: 5px; }
 	nav button span { overflow-wrap: anywhere; }
 	nav button.chosen { background: var(--ui-active, #dce7ce); color: var(--ui-text, #35502d); }
 	.new-project { margin-top: 13px; }
-	.sidebar-footer { margin-top: auto; padding-top: 45px; display: flex; flex-direction: column; gap: 15px; }
-	.sidebar-footer small { font-size: 10px; color: var(--ui-muted, #7c8a6c); }
-	.admin-settings { font-size: 12px; color: var(--ui-text, #536a45); }
+	.sidebar-footer { margin-top: auto; padding-top: 32px; }
 	.workspace { flex: 1; min-width: 0; padding: 0 35px; display: flex; flex-direction: column; }
 	header { height: 85px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--ui-border, #e1e5dc); font-size: 11px; color: var(--ui-muted, #839076); }
 	.project-header { margin-bottom: 24px; }
-	header strong { color: var(--ui-text, #526348); font-weight: 500; }
-	.badge { font-size: 8px; letter-spacing: 1px; border: 1px solid var(--ui-border, #d8dfd0); padding: 8px; border-radius: 4px; }
+	.workspace-location { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+	.breadcrumb { min-width: 0; overflow: hidden; }
+	.breadcrumb ol { display: flex; align-items: center; gap: 10px; list-style: none; padding: 0; margin: 0; }
+	.breadcrumb li { display: flex; align-items: center; min-width: 0; }
+	.breadcrumb li:not(:last-child)::after { content: '/'; margin-left: 10px; color: var(--ui-muted, #839076); flex-shrink: 0; }
+	.breadcrumb [aria-current="page"] { color: var(--ui-text, #526348); font-weight: 600; }
+	.crumb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.breadcrumb .project-link { display: block; width: auto; min-width: 0; padding: 0; margin: 0; border: 0; border-radius: 2px; background: transparent; color: inherit; font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.project-link:hover { color: var(--ui-accent, #425f30); text-decoration: underline; }
+	.header-save.save-actions { flex-shrink: 0; flex-wrap: nowrap; }
+	.menu-toggle { display: none; flex-shrink: 0; align-items: center; gap: 7px; border: 1px solid var(--ui-border, #d3ddc8); border-radius: 7px; background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); padding: 9px 10px; font-size: 11px; }
+	.menu-toggle svg { width: 17px; height: 17px; }
 	.page-heading { display: flex; gap: 20px; align-items: center; justify-content: space-between; padding: 33px 0; }
 	h1 { font-family: Georgia, serif; font-size: clamp(28px, 3vw, 40px); font-weight: 400; letter-spacing: -1px; margin: 12px 0; overflow-wrap: anywhere; }
 	h2 { font-family: Georgia, serif; font-size: 25px; font-weight: 400; }
@@ -706,9 +804,7 @@
 	.inline-form label { font-size: 12px; }
 	input, textarea { color: var(--ui-text, #34492c); font: inherit; font-size: 12px; background: white; border: 1px solid var(--ui-border, #d4dec8); border-radius: 5px; padding: 10px; min-width: 0; }
 	.inline-form input { flex: 1; min-width: 150px; }
-	.edition-bar { padding: 14px; border: 1px solid var(--ui-border, #dce2d4); background: var(--ui-soft, #eef3e6); border-radius: 8px; display: flex; gap: 14px; flex-wrap: wrap; justify-content: space-between; margin-bottom: 20px; }
-	.selected-edition, .save-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-	.selected-edition strong { font-size: 12px; color: var(--ui-text, #3d5b2e); overflow-wrap: anywhere; }
+	.save-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 	.save-actions > span { color: var(--ui-muted, #78886b); font-size: 10px; }
 	.project-tools { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; }
 	.view-tabs { display: flex; flex-wrap: wrap; gap: 3px; }
@@ -736,8 +832,6 @@
 	.member-list span { color: var(--ui-muted, #78886b); line-height: 1.8; }
 	.member-role { flex-shrink: 0; }
 	.notice { padding: 12px 15px; border-radius: 5px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
-	.error { background: #fff0e8; color: #9b4335; }
-	.success { background: var(--ui-soft, #edf4e3); color: var(--ui-text, #648249); }
 	.library { padding: 25px; }
 	.utm-form { max-width: 640px; }
 	.utm-form input { width: 100%; }
@@ -756,15 +850,15 @@
 	.edition-export { padding: 14px; border: 1px solid var(--ui-border, #dce2d4); border-radius: 8px; margin-bottom: 20px; background: var(--ui-surface, #fcfdfb); }
 	.edition-export label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 8px; }
 	.edition-export p { margin-bottom: 0; }
+	.test-email { padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--ui-border, #dce2d4); }
+	.test-email textarea { width: 100%; resize: vertical; }
 	.export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 	.export-actions input { flex: 1; min-width: min(100%, 240px); }
 	.export-actions a { text-decoration: none; }
-	.import-edition { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 25px 0; padding: 14px; background: var(--ui-soft, #eff3e8); border-radius: 7px; font-size: 11px; color: var(--ui-muted, #708363); }
-	.import-edition input { max-width: 100%; }
 	footer { font-size: 9px; letter-spacing: 1px; color: var(--ui-muted, #94a186); border-top: 1px solid var(--ui-border, #e1e5dc); padding: 20px 0; margin-top: auto; }
 	.setup { min-height: 100vh; max-width: 780px; margin: auto; padding: 60px 25px; }
 	.setup-card { padding: 35px; }
 	.setup-card ol { font-size: 12px; color: var(--ui-muted, #6d7f5c); line-height: 2.2; padding-left: 20px; }
-	@media (max-width: 1100px) { aside { width: 210px; padding: 28px 15px; } .workspace { padding: 0 22px; } .editor-grid { grid-template-columns: minmax(0, 1fr); } .page-heading { flex-wrap: wrap; } }
-	@media (max-width: 640px) { .app { flex-direction: column; } aside { width: 100%; border-right: 0; border-bottom: 1px solid #dce1d6; padding: 20px; } .brand { margin-bottom: 20px; } .sidebar-footer { padding-top: 20px; } .workspace { padding: 0 18px; } header { height: 65px; } .badge { font-size: 7px; } nav { display: flex; flex-wrap: wrap; } nav button { width: auto; } .project-heading { margin-top: 20px; } .library { padding: 18px; } .setup-card { padding: 23px; } .inline-form input { width: 100%; } }
+	@media (max-width: 1100px) { .workspace { padding: 0 22px; } header { position: sticky; top: 0; z-index: 10; height: 65px; background: var(--ui-canvas, #f6f7f3); } .menu-toggle { display: inline-flex; } .editor-grid { grid-template-columns: minmax(0, 1fr); } .page-heading { flex-wrap: wrap; } }
+	@media (max-width: 640px) { .app { flex-direction: column; } .brand { margin-bottom: 20px; } .sidebar-footer { padding-top: 20px; } .workspace { padding: 0 18px; } .header-save { flex-direction: column; align-items: flex-end; gap: 4px; } .save-detail { display: none; } .library { padding: 18px; } .setup-card { padding: 23px; } .inline-form input { width: 100%; } }
 </style>

@@ -142,13 +142,9 @@ export async function resolveAssets(database: Database, projectId: string, newsl
 	const resolved = {
 		...newsletter,
 		...(newsletter.fields === undefined ? {} : { fields: resolveFields(newsletter.fields) }),
-		items: newsletter.items.map((item) => {
-			const fields = item.fields === undefined ? {} : { fields: resolveFields(item.fields) };
-			if (!item.imageAssetId) return { ...item, ...fields, image: resolveUrl(item.image) };
-			const asset = available.get(item.imageAssetId);
-			if (!asset) error(400, 'Choose a project image or an image belonging to this edition.');
-			return { ...item, ...fields, image: asset.url };
-		})
+		items: newsletter.items.map((item) => ({
+			...item, fields: Object.fromEntries(Object.entries(item.fields).map(([name, value]) => [name, resolveUrl(value)]))
+		}))
 	};
 	return newsletterInput(resolved);
 }

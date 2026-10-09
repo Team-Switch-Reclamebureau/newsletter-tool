@@ -2,33 +2,30 @@
 	import { untrack } from 'svelte';
 	import { jsonRequest, requestJson } from './api-client';
 	import type { AdminUser } from './admin-users';
+	import { useToasts } from './toast-context';
 
 	let { initial, currentUserId }: { initial: AdminUser[]; currentUserId: string } = $props();
+	const toasts = useToasts();
 	let users = $state(untrack(() => initial));
 	let name = $state('');
 	let email = $state('');
 	let busy = $state(false);
-	let failed = $state(false);
-	let message = $state('');
 
 	async function refresh() {
 		busy = true;
 		try { users = (await requestJson<{ users: AdminUser[] }>('/api/admin/users')).users; }
-		catch (cause) { failed = true; message = cause instanceof Error ? cause.message : 'Users could not be loaded.'; }
+		catch (cause) { toasts.error(cause instanceof Error ? cause.message : 'Users could not be loaded.'); }
 		finally { busy = false; }
 	}
 
 	async function action(path: string, method: string, body: unknown, success: string) {
 		busy = true;
-		message = '';
 		try {
 			users = (await requestJson<{ users: AdminUser[] }>(path, jsonRequest(method, body))).users;
-			failed = false;
-			message = success;
+			toasts.success(success);
 			if (path === '/api/admin/users') { name = ''; email = ''; }
 		} catch (cause) {
-			failed = true;
-			message = cause instanceof Error ? cause.message : 'The operation failed. Please try again.';
+			toasts.error(cause instanceof Error ? cause.message : 'The operation failed. Please try again.');
 		} finally { busy = false; }
 	}
 
@@ -53,7 +50,6 @@
 </form>
 <p>After a delivery failure, refresh the list and resend the pending invitation once SMTP is fixed.</p>
 <button type="button" class="secondary" disabled={busy} onclick={refresh}>Refresh users</button>
-{#if message}<p class:error={failed} role={failed ? 'alert' : 'status'}>{message}</p>{/if}
 <ul>
 	{#each users as user (user.id)}
 		<li>
@@ -80,5 +76,4 @@
 	strong, span { display: block; }
 	.actions { display: flex; gap: 8px; flex-wrap: wrap; }
 	input:focus-visible, button:focus-visible { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
-	.error { color: #9b4335; }
 </style>

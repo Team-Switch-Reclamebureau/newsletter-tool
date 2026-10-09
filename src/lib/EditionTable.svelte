@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { serializeNewsletter, type Newsletter } from './newsletters';
 
-	let { editions, onOpen, onClone, onDelete, onCopyLink, deletingId, deletionDisabled }: {
+	let { editions, onOpen, onClone, onDelete, deletingId, deletionDisabled }: {
 		editions: {
 			newsletter: Newsletter;
-			permalink: string | null;
 			revision: number;
 			snapshot: string | null;
 			saving: boolean;
@@ -13,7 +12,6 @@
 		onOpen: (id: string) => void;
 		onClone: (id: string) => void;
 		onDelete: (id: string) => void;
-		onCopyLink: (id: string) => void;
 		deletingId: string | null;
 		deletionDisabled: boolean;
 	} = $props();
@@ -54,15 +52,13 @@
 		</div>
 		<div class="table-scroll" role="region" aria-label="Editions table">
 			<table aria-label="Newsletter editions">
-				<thead><tr><th scope="col">Edition</th><th scope="col">Items</th><th scope="col">Save status</th><th scope="col">Last saved</th><th scope="col">HTML export</th><th scope="col">Actions</th></tr></thead>
+				<thead><tr><th scope="col">Edition</th><th scope="col">Save status</th><th scope="col">Last saved</th><th scope="col">Actions</th></tr></thead>
 				<tbody>
 					{#each visible as entry (entry.newsletter.id)}
 						<tr>
 							<td class="edition-name">{entry.newsletter.name || 'Untitled newsletter'}{#if entry.error}<p class="save-error" role="alert">{entry.error}</p>{/if}</td>
-							<td>{entry.newsletter.items.length}</td>
 							<td><span class="status" class:pending={status(entry) !== 'Saved'}>{status(entry)}</span></td>
 							<td>{#if entry.revision}<time datetime={entry.newsletter.updatedAt}>{new Date(entry.newsletter.updatedAt).toLocaleString()}</time>{:else}Not saved yet{/if}</td>
-							<td>{#if entry.permalink}<div class="row-actions"><a href={entry.permalink} target="_blank" rel="noreferrer" aria-label={`Open HTML for ${entry.newsletter.name}`}>Open HTML</a><button onclick={() => onCopyLink(entry.newsletter.id)} aria-label={`Copy HTML link for ${entry.newsletter.name}`}>Copy link</button></div>{:else}Save to create link{/if}</td>
 							<td><div class="row-actions">
 								<button onclick={() => onOpen(entry.newsletter.id)} disabled={deletingId === entry.newsletter.id} aria-label={`Open edition ${entry.newsletter.name || 'Untitled newsletter'}`}>Open</button>
 								<button onclick={() => onClone(entry.newsletter.id)} disabled={entry.saving || deletingId === entry.newsletter.id} aria-label={`Clone edition ${entry.newsletter.name || 'Untitled newsletter'}`}>Clone</button>
@@ -70,13 +66,13 @@
 							</div></td>
 						</tr>
 					{:else}
-						<tr><td colspan="6" class="empty">No editions match your search. <button onclick={() => search = ''}>Clear search</button></td></tr>
+						<tr><td colspan="4" class="empty">No editions match your search. <button onclick={() => search = ''}>Clear search</button></td></tr>
 					{/each}
 				</tbody>
 			</table>
 		</div>
 	{:else}
-		<p class="empty">No editions yet. Click New newsletter to create your first edition, or import an existing newsletter JSON below.</p>
+		<p class="empty">No editions yet. Click New newsletter to create your first edition.</p>
 	{/if}
 </section>
 
@@ -102,7 +98,6 @@
 	.status { display: inline-block; color: var(--ui-text, #537a37); background: var(--ui-soft, #edf4e3); border-radius: 4px; padding: 5px 7px; font-size: 10px; white-space: nowrap; }
 	.status.pending { color: #806c3c; background: #f8f2df; }
 	.row-actions { display: flex; gap: 8px; }
-	.row-actions a { color: var(--ui-text, #536a45); font-size: 11px; white-space: nowrap; align-self: center; }
 	.delete { color: #9b4335; }
 	button { color: var(--ui-text, #536a45); background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #d3ddc8); border-radius: 5px; padding: 8px 11px; font-size: 11px; }
 	.empty { text-align: center; padding: 30px 22px; }
