@@ -82,10 +82,22 @@ editor-only field markers are never included in saved content or HTML exports.
 The layout preference is stored with each user account and restored across
 campaigns, projects, browser refreshes, and sign-ins, including other devices.
 Failed preference saves are shown explicitly and restore the previous layout.
+Open a campaign from the **Campaigns** tab by clicking its name or **Open** button.
 Rename campaigns in the campaign **Settings** tab alongside UTM settings.
 The account panel at the bottom of the sidebar shows the user's profile and
 button-style actions for **Admin settings** (administrators only),
-**Change password**, and **Sign out**.
+**User settings**, and **Sign out**.
+Both settings pages use tabs instead of stacked sections: **Branding**,
+**Email settings**, and **User management** for administrators; **Your name**,
+**Email address**, and **Password** for users. Switching tabs keeps unsaved form
+values intact. Use Left/Right arrow keys or Home/End to move between tabs.
+Both pages share a top-aligned layout with the workspace link in the header;
+switching tabs does not vertically recenter the page.
+In **User settings**, users can save their name, change their password, and request
+an email address change using their current password. A one-hour verification link
+is sent to the new address through the administrator's saved SMTP settings.
+The old address remains the sign-in address until verification succeeds.
+Email changes fail explicitly if SMTP delivery fails or the address is already in use.
 Project and campaign view tabs pair text labels with consistent outline icons;
 icons are decorative, so accessible names and keyboard behavior remain unchanged.
 On screens up to 1100px wide, navigation starts collapsed behind **Menu** in the

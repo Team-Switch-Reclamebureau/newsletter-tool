@@ -4,6 +4,18 @@ import type { createAuth } from './auth';
 import type { ServerConfig } from './config';
 import { sendEmail } from './email';
 import { readApplicationSettings } from './application-settings';
+import { createEmailVerificationToken } from 'better-auth/api';
+
+export async function sendEmailChangeLink(pool: Pool, config: ServerConfig, user: { name: string; email: string }, newEmail: string) {
+	const token = await createEmailVerificationToken(config.authSecret, user.email, newEmail, 3600, { requestType: 'change-email-verification' });
+	const url = new URL('/api/auth/verify-email', config.origin);
+	url.searchParams.set('token', token);
+	url.searchParams.set('callbackURL', `${config.origin}/account?emailChanged=1`);
+	const { applicationName } = await readApplicationSettings(pool);
+	await sendEmail(pool, config.authSecret, newEmail,
+		`Verify your ${applicationName} email address`,
+		`Hello ${user.name},\n\nConfirm your new email address:\n\n${url.href}\n\nThis link expires in one hour. Your current email address remains active until you confirm.\nIf you did not request this change, ignore this email.`);
+}
 
 export async function sendPasswordLink(pool: Pool, config: ServerConfig, auth: ReturnType<typeof createAuth>, email: string) {
 	const { internalAdapter } = await auth.$context;

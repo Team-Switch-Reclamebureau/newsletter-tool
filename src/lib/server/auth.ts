@@ -34,5 +34,5 @@ export function createAuth(pool: Pool, config: ServerConfig) {
 
 // Registration is internal only, used by administrator provisioning and invitations.
 export const PUBLIC_AUTH_PATHS = new Set([
-	'/sign-in/email', '/sign-out', '/get-session', '/reset-password', '/change-password'
+	'/sign-in/email', '/sign-out', '/get-session', '/reset-password', '/change-password', '/verify-email'
 ]);

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SMTPServer } from 'smtp-server';
+import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { AdminUser } from '../../src/lib/admin-users';
 import type { EmailSettings } from '../../src/lib/email-settings';
 import { startHostedFixture } from '../helpers/hosted-fixture';
@@ -9,6 +10,7 @@ let smtp: SMTPServer;
 let smtpPort = 0;
 let ownerCookie = '';
 let outsiderCookie = '';
+let memberCookie = '';
 let rejected = false;
 const messages: string[] = [];
 
@@ -65,6 +67,40 @@ afterAll(async () => {
 });
 
 describe('account email through real SMTP and PostgreSQL', () => {
+	it('renders settings as linked tabs with only the initial panel visible', async () => {
+		function elements(node: DefaultTreeAdapterMap['node']): DefaultTreeAdapterMap['element'][] {
+			return [
+				...('tagName' in node ? [node] : []),
+				...('childNodes' in node ? node.childNodes.flatMap(elements) : [])
+			];
+		}
+		for (const [path, ids, fields] of [
+			['/admin', ['branding', 'email', 'users'], ['application-name', 'smtp-host']],
+			['/account', ['profile', 'email', 'password'], ['profile-name', 'profile-email', 'new-password']]
+		] as const) {
+			const response = await request(path);
+			expect(response.status).toBe(200);
+			const nodes = elements(parse(await response.text()));
+			const attribute = (node: DefaultTreeAdapterMap['element'], name: string) => node.attrs.find((attr) => attr.name === name)?.value;
+			expect(nodes.some((node) => node.tagName === 'main' && attribute(node, 'class')?.split(' ').includes('settings-layout'))).toBe(true);
+			expect(nodes.some((node) => node.tagName === 'header' && elements(node).some((child) => child.tagName === 'a' && attribute(child, 'href') === '/'))).toBe(true);
+			const tabs = nodes.filter((node) => attribute(node, 'role') === 'tab');
+			const panels = nodes.filter((node) => attribute(node, 'role') === 'tabpanel');
+			expect(tabs).toHaveLength(3);
+			expect(panels).toHaveLength(3);
+			ids.forEach((id, index) => {
+				expect(attribute(tabs[index], 'id')).toBe(`settings-tab-${id}`);
+				expect(attribute(tabs[index], 'aria-controls')).toBe(`settings-panel-${id}`);
+				expect(attribute(tabs[index], 'aria-selected')).toBe(String(index === 0));
+				expect(attribute(tabs[index], 'tabindex')).toBe(index === 0 ? '0' : '-1');
+				expect(attribute(panels[index], 'id')).toBe(`settings-panel-${id}`);
+				expect(attribute(panels[index], 'aria-labelledby')).toBe(`settings-tab-${id}`);
+				expect(attribute(panels[index], 'hidden')).toBe(index === 0 ? undefined : '');
+			});
+			for (const id of fields) expect(nodes.some((node) => attribute(node, 'id') === id)).toBe(true);
+		}
+	});
+
 	it('restricts SMTP and user management to administrators and leaves registration closed', async () => {
 		for (const path of ['/api/admin/email', '/api/admin/users']) {
 			expect((await request(path, 'GET', undefined, '')).status).toBe(401);
@@ -191,6 +227,81 @@ describe('account email through real SMTP and PostgreSQL', () => {
 		expect((await request('/api/projects', 'GET', undefined, otherSession)).status).toBe(401);
 		expect((await request('/api/projects', 'GET', undefined, outsiderCookie)).status).toBe(401);
 		outsiderCookie = cookie;
+	});
+
+	it('lets users save only their own name and exposes all user settings together', async () => {
+		memberCookie = await login('member@example.test');
+		expect((await request('/account', 'GET', undefined, '')).status).toBe(303);
+		const page = await request('/account', 'GET', undefined, memberCookie);
+		expect(page.status).toBe(200);
+		const html = await page.text();
+		for (const label of ['User settings', 'Your name', 'New email address', 'Change password', 'member@example.test']) expect(html).toContain(label);
+		const path = '/api/account/profile';
+		expect((await request(path, 'PATCH', { name: 'Renamed' }, '')).status).toBe(401);
+		expect((await request(path, 'PATCH', { name: 'Renamed' }, memberCookie, 'https://wrong.test')).status).toBe(403);
+		for (const name of ['', '   ', 'x'.repeat(81), 'bad\nname', 123]) {
+			expect((await request(path, 'PATCH', { name }, memberCookie)).status).toBe(400);
+		}
+		expect((await request(path, 'PATCH', { name: 'Renamed', email: 'bypass@example.test' }, memberCookie)).status).toBe(400);
+		const saved = await request(path, 'PATCH', { name: '  Renamed Member  ' }, memberCookie);
+		expect(saved.status).toBe(200);
+		const cookies = saved.headers.getSetCookie();
+		if (cookies.length) memberCookie = cookies.map((cookie) => cookie.split(';')[0]).join('; ');
+		expect(await (await request('/account', 'GET', undefined, memberCookie)).text()).toContain('Renamed Member');
+		expect(await (await request('/', 'GET', undefined, memberCookie)).text()).toContain('Renamed Member');
+		expect((await fixture.pool.query('SELECT name FROM "user" WHERE email = $1', ['owner@example.test'])).rows[0].name).toBe('owner');
+	});
+
+	it('requires password proof, rejects invalid changes, and reports email delivery failure', async () => {
+		const path = '/api/account/profile';
+		const body = { email: 'new-member@example.test', currentPassword: fixture.password };
+		expect((await request(path, 'POST', body, '')).status).toBe(401);
+		expect((await request(path, 'POST', body, memberCookie, 'https://wrong.test')).status).toBe(403);
+		expect((await request(path, 'POST', { ...body, email: 'not-an-email' }, memberCookie)).status).toBe(400);
+		expect((await request(path, 'POST', { ...body, currentPassword: 'wrong-password' }, memberCookie)).status).toBe(400);
+		expect((await request(path, 'POST', { ...body, email: 'owner@example.test' }, memberCookie)).status).toBe(409);
+		rejected = true;
+		try {
+			const failed = await request(path, 'POST', body, memberCookie);
+			expect(failed.status).toBe(503);
+			expect((await failed.json()).message).toContain('verification email could not be sent');
+			expect((await fixture.pool.query('SELECT email FROM "user" WHERE name = $1', ['Renamed Member'])).rows[0].email).toBe('member@example.test');
+		} finally { rejected = false; }
+		expect((await request(path, 'POST', body, memberCookie)).status).toBe(200);
+		expect((await request(path, 'POST', body, memberCookie)).status).toBe(429);
+	});
+
+	it('changes the sign-in email only after verification and handles invalid or reused links', async () => {
+		const decoded = messages.at(-1)!.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+		const link = decoded.match(/https?:\/\/[^\s]+\/api\/auth\/verify-email\?[^\s]+/)?.[0];
+		expect(link).toBeTruthy();
+		const verificationToken = new URL(link!).searchParams.get('token')!;
+		const claims = JSON.parse(Buffer.from(verificationToken.split('.')[1], 'base64url').toString());
+		expect(claims.exp - claims.iat).toBe(3600);
+		expect(claims).toMatchObject({ email: 'member@example.test', updateTo: 'new-member@example.test', requestType: 'change-email-verification' });
+		expect(decoded).toContain('new-member@example.test');
+		expect(decoded).toContain('Renamed Member');
+		expect(await (await request('/account', 'GET', undefined, memberCookie)).text()).toContain('member@example.test');
+		expect((await request('/api/auth/change-email', 'POST', { newEmail: 'bypass@example.test' }, memberCookie)).status).toBe(403);
+		const invalid = await request('/api/auth/verify-email?token=invalid&callbackURL=/account', 'GET', undefined, memberCookie);
+		expect(invalid.status).toBe(302);
+		expect(invalid.headers.get('location')).toContain('error=INVALID_TOKEN');
+		const errorPage = await request('/account?error=INVALID_TOKEN', 'GET', undefined, memberCookie);
+		expect(await errorPage.text()).toContain('verification link is invalid');
+		const verified = await request(new URL(link!).pathname + new URL(link!).search, 'GET', undefined, memberCookie);
+		expect(verified.status).toBe(302);
+		expect(verified.headers.get('location')).toBe(`${fixture.origin}/account?emailChanged=1`);
+		memberCookie = verified.headers.getSetCookie().map((cookie) => cookie.split(';')[0]).join('; ');
+		const verifiedPage = await request('/account?emailChanged=1', 'GET', undefined, memberCookie);
+		expect(await verifiedPage.text()).toContain('Your sign-in address is now new-member@example.test');
+		expect((await fixture.pool.query('SELECT email, "emailVerified" FROM "user" WHERE name = $1', ['Renamed Member'])).rows[0]).toEqual({ email: 'new-member@example.test', emailVerified: true });
+		const reused = await request(new URL(link!).pathname + new URL(link!).search, 'GET', undefined, memberCookie);
+		expect(reused.status).toBe(302);
+		expect(reused.headers.get('location')).toContain('error=');
+		await fixture.pool.query('DELETE FROM "rateLimit"');
+		expect((await request('/api/auth/sign-in/email', 'POST', { email: 'member@example.test', password: fixture.password }, '')).status).toBe(401);
+		memberCookie = await login('new-member@example.test');
+		expect((await request('/api/projects', 'GET', undefined, memberCookie)).status).toBe(200);
 	});
 
 	it('recovers passwords without account enumeration, rejects expired links, and revokes sessions', async () => {

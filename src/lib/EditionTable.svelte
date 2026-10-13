@@ -56,7 +56,7 @@
 				<tbody>
 					{#each visible as entry (entry.newsletter.id)}
 						<tr>
-							<td class="edition-name">{entry.newsletter.name || 'Untitled campaign'}{#if entry.error}<p class="save-error" role="alert">{entry.error}</p>{/if}</td>
+							<td class="edition-name"><button class="campaign-name" type="button" onclick={() => onOpen(entry.newsletter.id)} disabled={deletingId === entry.newsletter.id}>{entry.newsletter.name || 'Untitled campaign'}</button>{#if entry.error}<p class="save-error" role="alert">{entry.error}</p>{/if}</td>
 							<td><span class="status" class:pending={status(entry) !== 'Saved'}>{status(entry)}</span></td>
 							<td>{#if entry.revision}<time datetime={entry.newsletter.updatedAt}>{new Date(entry.newsletter.updatedAt).toLocaleString()}</time>{:else}Not saved yet{/if}</td>
 							<td><div class="row-actions">
@@ -100,6 +100,10 @@
 	.row-actions { display: flex; gap: 8px; }
 	.delete { color: #9b4335; }
 	button { color: var(--ui-text, #536a45); background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #d3ddc8); border-radius: 5px; padding: 8px 11px; font-size: 11px; }
+	.campaign-name { color: inherit; background: transparent; border: 0; padding: 0; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+	.campaign-name:hover:not(:disabled), .campaign-name:focus-visible { text-decoration: underline; }
+	.campaign-name:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+	.campaign-name:disabled { opacity: 0.5; cursor: not-allowed; }
 	.empty { text-align: center; padding: 30px 22px; }
 	.save-error { color: #9b4335; font-weight: 400; }
 	@media (max-width: 640px) { .table-heading { align-items: start; } .table-controls { padding: 16px; } .control { width: 100%; } }

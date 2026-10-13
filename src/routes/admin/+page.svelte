@@ -6,6 +6,8 @@
 	import { untrack } from 'svelte';
 	import AdminEmailSettings from '#lib/AdminEmailSettings.svelte';
 	import AdminUsers from '#lib/AdminUsers.svelte';
+	import SettingsTabs from '#lib/SettingsTabs.svelte';
+	import SettingsLayout from '#lib/SettingsLayout.svelte';
 	import { useToasts } from '#lib/toast-context.js';
 
 	let { data }: { data: PageData } = $props();
@@ -17,6 +19,12 @@
 	let saved = $state<ApplicationSettings>({ ...initial });
 	let saving = $state(false);
 	let emailDirty = $state(false);
+	let activeTab = $state('branding');
+	const tabs = [
+		{ id: 'branding', label: 'Branding' },
+		{ id: 'email', label: 'Email settings' },
+		{ id: 'users', label: 'User management' }
+	];
 	const brandingDirty = $derived(applicationName !== saved.applicationName || baseColor !== saved.baseColor || accentColor !== saved.accentColor);
 	const dirty = $derived(brandingDirty || emailDirty);
 
@@ -56,13 +64,9 @@
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} />
-<svelte:head><title>Admin settings — {data.settings.applicationName}</title></svelte:head>
-
-<main>
-	<header><a class="brand" href="/">{data.settings.applicationName}<span>.</span></a><a href="/">Back to workspace</a></header>
-	<h1>Admin settings</h1>
-	<p>Application-wide settings. Only administrators can change them.</p>
-	<section aria-labelledby="branding-heading">
+<SettingsLayout title="Admin settings" applicationName={data.settings.applicationName} description="Application-wide settings. Only administrators can change them.">
+	<SettingsTabs {tabs} bind:active={activeTab} label="Administrator settings" />
+	<div class="settings-panel" id="settings-panel-branding" role="tabpanel" aria-labelledby="settings-tab-branding" tabindex="0" hidden={activeTab !== 'branding'}>
 		<h2 id="branding-heading">Branding</h2>
 		<form onsubmit={save}>
 			<fieldset disabled={saving}>
@@ -82,22 +86,14 @@
 				<div class="actions"><button type="submit" disabled={!brandingDirty}>{saving ? 'Saving…' : 'Save settings'}</button><button class="secondary" type="button" onclick={reset}>Restore defaults</button></div>
 			</fieldset>
 		</form>
-	</section>
-	<section aria-labelledby="email-heading"><h2 id="email-heading">Email settings</h2><AdminEmailSettings initial={data.emailSettings} bind:dirty={emailDirty} /></section>
-	<section aria-labelledby="users-heading"><h2 id="users-heading">User management</h2><AdminUsers initial={data.users} currentUserId={data.currentUserId} /></section>
-</main>
+	</div>
+	<div class="settings-panel" id="settings-panel-email" role="tabpanel" aria-labelledby="settings-tab-email" tabindex="0" hidden={activeTab !== 'email'}><h2 id="email-heading">Email settings</h2><AdminEmailSettings initial={data.emailSettings} bind:dirty={emailDirty} /></div>
+	<div class="settings-panel" id="settings-panel-users" role="tabpanel" aria-labelledby="settings-tab-users" tabindex="0" hidden={activeTab !== 'users'}><h2 id="users-heading">User management</h2><AdminUsers initial={data.users} currentUserId={data.currentUserId} /></div>
+</SettingsLayout>
 
 <style>
-	:global(body) { margin: 0; background: #f6f7f3; color: #25382d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-	main { max-width: 840px; margin: auto; padding: 30px 24px; }
-	header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--ui-border, #dce2d4); margin-bottom: 30px; }
-	a { color: var(--ui-text, #526348); font-size: 12px; }
-	.brand { font-size: 29px; font-weight: 750; letter-spacing: -1px; text-decoration: none; overflow-wrap: anywhere; color: var(--ui-base-ink, #425f30); }
-	.brand span { color: var(--ui-accent, #839e5d); }
-	h1 { font-size: 32px; font-weight: 650; letter-spacing: -1px; }
 	h2 { font-size: 16px; margin-top: 0; }
 	p { font-size: 12px; line-height: 1.8; color: var(--ui-muted, #78886b); }
-	section { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); padding: 24px; margin-top: 20px; }
 	fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 	label { display: block; font-size: 12px; font-weight: 600; margin: 18px 0 8px; }
 	input { box-sizing: border-box; font: inherit; color: var(--ui-text, #34492c); background: white; border: 1px solid var(--ui-border, #d4dec8); border-radius: 5px; padding: 10px; max-width: 100%; }
@@ -115,5 +111,5 @@
 	button { font: inherit; font-size: 12px; border: 0; padding: 11px 16px; border-radius: 5px; cursor: pointer; background: var(--ui-primary, #425f30); color: var(--ui-on-primary, white); }
 	button.secondary { background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); border: 1px solid var(--ui-border, #d3ddc8); }
 	button:disabled { opacity: .55; cursor: default; }
-	a:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
+	input:focus-visible, button:focus-visible { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
 </style>
