@@ -1,7 +1,7 @@
 import { DEFAULT_ITEM_SNIPPET, MAX_TEMPLATE_BYTES } from './remote';
 import { fieldError, fieldValue, templateFields, validFieldValues, validHttpUrl, type FieldValues } from './template-fields';
 import { EMPTY_UTM, parseUtm, type UtmSettings } from './utm';
-import { EMPTY_IMAGE_PLACEHOLDER, markPreviewFields, type PreviewField } from './preview-fields';
+import { EMPTY_IMAGE_PLACEHOLDER, PREVIEW_ADD_ITEM_CLASS, markPreviewFields, type PreviewField } from './preview-fields';
 import { escapeMarkup, renderRichText } from './rich-text';
 export { validHttpUrl } from './template-fields';
 
@@ -160,6 +160,7 @@ export function composeNewsletter(template: string, snippet: string | null, news
 			return '';
 		}) + '\n';
 	}
+	if (previewFields) itemMarkup += `<mj-raw><div class="${PREVIEW_ADD_ITEM_CLASS}"></div></mj-raw>`;
 	let unknown = '';
 	const source = (previewFields ? markPreviewFields(template, previewFields, null) : template).replace(/<!--[\s\S]*?-->|{{\s*([^{}]*?)\s*}}/g, (match: string, tag: string | undefined) => {
 		if (tag === undefined) return match;

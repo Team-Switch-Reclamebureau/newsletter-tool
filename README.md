@@ -84,8 +84,9 @@ The campaign **Content** tab offers two editor layouts:
   There is no permanent
   field editor beside the preview. **All fields & items** toggles the full form
   below the preview for alt text, hidden fields, and adding, removing, reordering,
-  and uploading images to items. Dynamic mode also has **Add item** in the preview
-  toolbar and move-up, move-down, and remove icons on each rendered item.
+  and uploading images to items. Dynamic mode has **Add item** inside the preview,
+  below the last item (or at the empty items location), and move-up, move-down,
+  and remove icons on each rendered item.
   The Dynamic preview fills the available window height below the campaign
   controls and resizes with the window. On very short windows it keeps a usable
   minimum height and the page remains scrollable. Split mode keeps its normal

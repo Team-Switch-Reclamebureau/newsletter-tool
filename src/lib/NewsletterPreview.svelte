@@ -95,7 +95,7 @@
 			ids: itemActions.ids,
 			onMove: (id, direction) => { selection = null; itemActions?.onMove(id, direction); },
 			onRemove: (id) => { selection = null; itemActions?.onRemove(id); }
-		} : undefined, fieldValues);
+		} : undefined, fieldValues, onAddItem ? () => { closeEditor(false); editing = false; onAddItem?.(); } : undefined);
 		cleanupEditing = () => {
 			document.removeEventListener('click', dismissOutside, true);
 			document.removeEventListener('keydown', dismissOnEscape, true);
@@ -162,7 +162,7 @@
 </script>
 
 <section bind:this={panel} class="preview-panel" class:fill-viewport={fillViewport} style:height={fillViewport && viewportHeight !== undefined ? `${viewportHeight}px` : undefined} aria-label="Newsletter preview" aria-busy={loading}>
-	<div class="toolbar"><h2>Preview</h2>{#if onAddItem}<button class="add-item" onclick={() => { selection = null; editing = false; onAddItem?.(); }}>+ Add item</button>{/if}<div><button class:active={!mobile} aria-pressed={!mobile} onclick={() => mobile = false}>Desktop</button><button class:active={mobile} aria-pressed={mobile} onclick={() => mobile = true}>Mobile</button></div></div>
+	<div class="toolbar"><h2>Preview</h2><div><button class:active={!mobile} aria-pressed={!mobile} onclick={() => mobile = false}>Desktop</button><button class:active={mobile} aria-pressed={mobile} onclick={() => mobile = true}>Mobile</button></div></div>
 	<div class="canvas" class:mobile>
 		{#if loading}<p role="status">Putting your preview together…</p>
 		{:else if message}<div class="error" role="alert"><strong>Something needs a look</strong><p>{message}</p>{#if !error}<button onclick={() => retry++}>Try again</button>{/if}</div>
@@ -193,7 +193,6 @@
 	.toolbar > div { display: flex; padding: 3px; border: 1px solid var(--ui-border, #dfe5d6); border-radius: 5px; background: var(--ui-soft, #f2f5ec); }
 	button { border: 0; border-radius: 3px; padding: 6px 9px; color: var(--ui-muted, #718161); background: transparent; font-size: 10px; }
 	button.active { color: var(--ui-text, #3f5734); background: white; }
-	.add-item { background: var(--ui-active, #e7efdc); color: var(--ui-text, #3f5734); }
 	.canvas { background: var(--ui-canvas, #e9ede4); padding: 22px; display: flex; justify-content: center; align-items: center; height: 620px; overflow-x: auto; }
 	.canvas > p { color: var(--ui-muted, #78886c); font-size: 12px; }
 	iframe { width: 100%; height: 100%; background: white; border: 0; }

@@ -5,6 +5,7 @@ import { DEFAULT_ITEM_SNIPPET } from './remote';
 export const EMPTY_IMAGE_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
 	'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="320" viewBox="0 0 600 320" preserveAspectRatio="none"><rect x="1" y="1" width="598" height="318" fill="#f3f4f6" stroke="#b8c0ca" stroke-width="2"/><path d="M1 1L599 319M599 1L1 319" fill="none" stroke="#b8c0ca" stroke-width="2"/></svg>'
 );
+export const PREVIEW_ADD_ITEM_CLASS = 'newsletter-add-item';
 
 export interface PreviewField extends TemplateField {
 	id: string;

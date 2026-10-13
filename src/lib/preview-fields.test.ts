@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from 'parse5';
 import { composeNewsletter, createItem, createNewsletter, serializeNewsletter } from './newsletters';
-import { EMPTY_IMAGE_PLACEHOLDER, markPreviewFields, previewFields, previewFieldValue, previewItemClass, updatePreviewField } from './preview-fields';
+import { EMPTY_IMAGE_PLACEHOLDER, PREVIEW_ADD_ITEM_CLASS, markPreviewFields, previewFields, previewFieldValue, previewItemClass, updatePreviewField } from './preview-fields';
 import { renderTemplate } from './server/render';
 
 const template = '<mjml><mj-body><mj-section><mj-column><mj-text>{{newsletter_name}} / {{text:heading}}</mj-text></mj-column></mj-section>{{items}}</mj-body></mjml>';
@@ -18,6 +18,27 @@ function fixture() {
 }
 
 describe('editable preview fields', () => {
+	it('puts the Add item location after all items and before a template footer, without exporting it', async () => {
+		const main = template.replace('{{items}}', '{{items}}<mj-section><mj-column><mj-text>Template footer</mj-text></mj-column></mj-section>');
+		const { newsletter } = fixture();
+		const fields = previewFields(main, snippet, newsletter);
+		const rendered = await renderTemplate(composeNewsletter(main, snippet, newsletter, fields, true).source);
+		expect(rendered.errors).toEqual([]);
+		const location = rendered.html.indexOf(`class="${PREVIEW_ADD_ITEM_CLASS}"`);
+		expect(location).toBeGreaterThan(rendered.html.lastIndexOf(previewItemClass(newsletter.items[1].id)));
+		expect(location).toBeLessThan(rendered.html.indexOf('Template footer'));
+		expect((await renderTemplate(composeNewsletter(main, snippet, newsletter).source)).html).not.toContain(PREVIEW_ADD_ITEM_CLASS);
+		expect(composeNewsletter(main, snippet, newsletter, undefined, true).source).not.toContain(PREVIEW_ADD_ITEM_CLASS);
+	});
+
+	it('keeps an Add item location for an empty campaign in Dynamic preview', async () => {
+		const newsletter = createNewsletter('Empty campaign');
+		const rendered = await renderTemplate(composeNewsletter(template, null, newsletter, previewFields(template, null, newsletter), true).source);
+		expect(rendered.errors).toEqual([]);
+		expect(rendered.html).toContain(`class="${PREVIEW_ADD_ITEM_CLASS}"`);
+		expect(composeNewsletter(template, null, newsletter).source).not.toContain(PREVIEW_ADD_ITEM_CLASS);
+	});
+
 	it('renders a crossed placeholder and editable image target for an empty default item without changing exports or storage', async () => {
 		const newsletter = createNewsletter('Empty image');
 		newsletter.items = [createItem()];

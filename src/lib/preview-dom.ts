@@ -1,4 +1,4 @@
-import { previewItemClass, type PreviewField } from './preview-fields';
+import { PREVIEW_ADD_ITEM_CLASS, previewItemClass, type PreviewField } from './preview-fields';
 import { createRichTextEditor } from './rich-text-editor';
 
 export interface PreviewAnchor {
@@ -29,7 +29,8 @@ export function enablePreviewEditing(
 	onUpdate: (id: string, value: string) => void,
 	onEditing: (editing: boolean) => void,
 	itemActions?: PreviewItemActions,
-	fieldValues: Record<string, string> = {}
+	fieldValues: Record<string, string> = {},
+	onAddItem?: () => void
 ): () => void {
 	const controller = new AbortController();
 	const options = { signal: controller.signal };
@@ -42,6 +43,10 @@ export function enablePreviewEditing(
 		.newsletter-edit-target { cursor: pointer; }
 		.newsletter-edit-target:hover { outline: 2px dashed #829e66; outline-offset: -2px; }
 		.newsletter-image-target, .newsletter-image-target a { cursor: default; }
+		.${PREVIEW_ADD_ITEM_CLASS} { box-sizing: border-box; max-width: 600px; margin: 0 auto; padding: 16px; text-align: center; }
+		.${PREVIEW_ADD_ITEM_CLASS} button { width: 100%; padding: 12px 16px; border: 1px dashed #829e66; border-radius: 6px; background: #f2f5ec; color: #3f5734; font: 13px Arial, sans-serif; cursor: pointer; }
+		.${PREVIEW_ADD_ITEM_CLASS} button:hover { background: #e7efdc; }
+		.${PREVIEW_ADD_ITEM_CLASS} button:focus-visible { outline: 2px solid #829e66; outline-offset: 2px; }
 		.newsletter-edit-tools { position: absolute; z-index: 1000; display: flex; gap: 4px; padding: 4px; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #0003; }
 		.newsletter-edit-tools button { display: grid; place-items: center; width: 30px; height: 30px; padding: 5px; border: 1px solid #dce2d4; border-radius: 4px; background: #fff; color: #3f5734; cursor: pointer; }
 		.newsletter-edit-tools button:hover { background: #e7efdc; }
@@ -178,6 +183,15 @@ export function enablePreviewEditing(
 	document.defaultView!.addEventListener('resize', positionTools, options);
 	document.addEventListener('load', positionTools, { ...options, capture: true });
 	positionTools();
+	const addItemButton = onAddItem ? document.createElement('button') : undefined;
+	if (addItemButton) {
+		const anchor = document.querySelector(`.${PREVIEW_ADD_ITEM_CLASS}`);
+		if (!anchor) throw new Error('The dynamic preview is missing its Add item location.');
+		addItemButton.type = 'button';
+		addItemButton.textContent = '+ Add item';
+		addItemButton.addEventListener('click', () => { onEditing(false); onAddItem?.(); }, options);
+		anchor.append(addItemButton);
+	}
 	document.addEventListener('click', (event) => {
 		const target = event.target;
 		if (!(target instanceof document.defaultView!.Element)) return;
@@ -201,6 +215,7 @@ export function enablePreviewEditing(
 		for (const editor of richEditors) editor.destroy();
 		observer.disconnect();
 		for (const { container } of tools) container.remove();
+		addItemButton?.remove();
 		style.remove();
 	};
 }
