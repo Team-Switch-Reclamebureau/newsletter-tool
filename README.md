@@ -76,10 +76,37 @@ The campaign **Content** tab offers two editor layouts:
   below the preview for alt text, hidden fields, and adding, removing, reordering,
   and uploading images to items. Dynamic mode also has **Add item** in the preview
   toolbar and move-up, move-down, and remove icons on each rendered item.
+  The Dynamic preview fills the available window height below the campaign
+  controls and resizes with the window. On very short windows it keeps a usable
+  minimum height and the page remains scrollable. Split mode keeps its normal
+  preview height. Empty textarea editors fill their text container in both
+  desktop and mobile previews.
 
-Both layouts edit the same unsaved draft. Text is plain text (multiline fields
-preserve line breaks), not arbitrary HTML. The preview refreshes after leaving
-an inline text field so typing does not interrupt the cursor. Static template
+Both layouts edit the same unsaved draft. Regular text fields remain plain text.
+Textarea fields use a minimal Tiptap editor with **Bold**, **Italic**, **Link**,
+**Undo**, and **Redo**. Select text and use **Link** to add or edit an absolute
+HTTP(S), `mailto:`, or `tel:` URL; **Remove link** keeps the text without its link. With no selection,
+adding a link inserts its URL as linked text. Invalid URLs are shown explicitly.
+In Dynamic mode the formatting toolbar appears when the field is
+focused; in Split mode it stays above the editor. Cmd/Ctrl+B and Cmd/Ctrl+I toggle
+formatting, Cmd/Ctrl+K opens the link editor, and the editor supports normal
+undo/redo shortcuts. Paste strips unsupported content and attributes; only text,
+bold, italic, safe HTTP(S)/email/telephone links, and line breaks are
+kept. Existing plain-text values, including literal HTML-looking text, remain
+literal until explicitly formatted.
+
+Edited textarea values use a versioned `newsletter-rich-text:v1:` JSON document
+inside the existing string-valued field maps; no database migration is needed.
+Server validation rejects unsupported nodes, marks, and attributes. Email
+composition escapes text and emits only `<strong>`, `<em>`, `<br />`, and
+`<a href="...">`; it never inserts arbitrary editor HTML. Text links pass through
+the same campaign UTM tracking as buttons in previews, saved HTML exports, and
+test emails, preserving other query parameters and fragments. `mailto:` and
+`tel:` destinations are never modified with UTM parameters. Existing resource
+link exclusions still apply. Stored link URLs stay unchanged, so changing campaign
+UTM settings does not require re-editing the text. Campaign JSON exports preserve formatting.
+The preview refreshes after leaving an inline text field so typing does not
+interrupt the cursor. Static template
 content and styling stay in the Templates tab. Preview links do not navigate,
 and template scripts remain disabled. Use **Save campaign** to persist changes;
 editor-only field markers are never included in saved content or HTML exports.
@@ -645,12 +672,12 @@ Use `{{type:name}}` to define input fields directly in MJML:
 </mj-section>
 ```
 
-Types are `text` (single line), `textarea` (multiline), `url`, `image` (image URL),
+Types are `text` (single line), `textarea` (multiline with bold/italic/links), `url`, `image` (image URL),
 and `number`. Image fields also offer the project's uploaded image library;
 upload new images in the **Images** tab. URL/image values must be absolute HTTP(S)
 URLs and numbers must be finite. All dynamic fields are optional; empty values
-render as empty strings. Content is escaped, with textarea line breaks rendered
-as `<br />`; user input is never interpreted as more placeholders.
+render as empty strings. Text is escaped; formatted textarea values emit only
+`<strong>`, `<em>`, `<br />`, and safe HTTP(S)/email/telephone anchors. User input is never interpreted as more placeholders.
 
 For example, `<mj-image src="{{ image:hero_image }}" />` creates an image URL
 input and an **Uploaded image for hero image** picker. Selecting an uploaded
@@ -693,7 +720,8 @@ For example:
 When the item snippet is unset, the app supplies a typed standard layout with
 image, image_alt, title, text, button, and url field names. It omits empty images
 and incomplete buttons. Custom snippets should be designed for the fields you use.
-Content is escaped rather than interpreted as HTML; text line breaks are preserved.
+Content is escaped rather than interpreted as arbitrary HTML; textarea formatting
+is validated and rendered using only bold, italic, safe links, and preserved line breaks.
 Unknown placeholders, invalid fields, and missing template slots are shown as
 preview errors. The preview updates automatically as you edit, and the MJML view
 shows the assembled source.

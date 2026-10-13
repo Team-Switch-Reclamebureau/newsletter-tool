@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fieldValue, type FieldValues, type TemplateField } from './template-fields';
 	import type { ImageAsset, ImageScope } from './remote';
+	import RichTextEditor from './RichTextEditor.svelte';
 
 	let { fields, values, prefix, assets = [], onUpdate, onImageUpload, imageUploading = false, canUploadEditionImages = false }: {
 		fields: TemplateField[];
@@ -38,7 +39,7 @@
 {#each fields as field (field.name)}
 	<label for={`${prefix}-field-${field.name}`}>{field.name.replace(/[_-]/g, ' ')} <small>{field.type}</small></label>
 	{#if field.type === 'textarea'}
-		<textarea id={`${prefix}-field-${field.name}`} rows="4" value={fieldValue(values, field.name)} oninput={(event) => onUpdate(field.name, event.currentTarget.value)}></textarea>
+		<RichTextEditor id={`${prefix}-field-${field.name}`} label={field.name.replace(/[_-]/g, ' ')} value={fieldValue(values, field.name)} onUpdate={(value) => onUpdate(field.name, value)} />
 	{:else}
 		<input id={`${prefix}-field-${field.name}`} type={field.type === 'image' ? 'url' : field.type === 'text' ? 'text' : field.type} step={field.type === 'number' ? 'any' : undefined} value={fieldValue(values, field.name)} oninput={(event) => onUpdate(field.name, event.currentTarget.value)} />
 	{/if}
@@ -65,9 +66,8 @@
 <style>
 	label { display: block; font-size: 11px; font-weight: 600; color: var(--ui-text, #5c7050); margin: 15px 0 7px; }
 	label small { font-weight: 400; color: var(--ui-muted, #7c8772); margin-left: 5px; }
-	input, textarea, select { width: 100%; border: 1px solid var(--ui-border, #d7dfcd); background: white; border-radius: 5px; padding: 10px 11px; font: inherit; font-size: 12px; color: var(--ui-text, #34492c); }
-	textarea { resize: vertical; line-height: 1.7; min-height: 85px; }
+	input, select { width: 100%; border: 1px solid var(--ui-border, #d7dfcd); background: white; border-radius: 5px; padding: 10px 11px; font: inherit; font-size: 12px; color: var(--ui-text, #34492c); }
 	.image-hint { font-size: 11px; color: var(--ui-muted, #7c8772); line-height: 1.7; }
 	.upload-error { color: #9b4335; background: #fff2ec; padding: 12px; font-size: 12px; line-height: 1.8; }
-	input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 2px; }
+	input:focus-visible, select:focus-visible { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 2px; }
 </style>

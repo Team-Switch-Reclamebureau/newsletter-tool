@@ -50,17 +50,12 @@ export function templateFields(source: string, scope: FieldScope): { fields: Tem
 	return { fields, error: null };
 }
 
-export function validHttpUrl(value: string): boolean {
-	try {
-		const url = new URL(value);
-		return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
-	} catch {
-		return false;
-	}
-}
-
 export function fieldError(field: TemplateField, value: string): string | null {
 	if (!value) return null;
+	if (field.type === 'textarea') {
+		try { richTextDocument(value); }
+		catch (cause) { return `Field "${field.name}": ${cause instanceof Error ? cause.message : 'Invalid formatted text.'}`; }
+	}
 	if ((field.type === 'url' || field.type === 'image') && !validHttpUrl(value)) {
 		return `Field "${field.name}": use an absolute http:// or https:// URL.`;
 	}
@@ -70,3 +65,6 @@ export function fieldError(field: TemplateField, value: string): string | null {
 	}
 	return null;
 }
+import { richTextDocument } from './rich-text';
+import { validHttpUrl } from './http-url';
+export { validHttpUrl } from './http-url';

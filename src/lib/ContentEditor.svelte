@@ -22,6 +22,7 @@
 	} = $props();
 	let showAll = $state(false);
 	const fields = $derived(previewFields(template, snippet, newsletter));
+	const fieldValues = $derived(Object.fromEntries(fields.map((field) => [field.id, previewFieldValue(newsletter, field)])));
 	const composition = $derived(composeNewsletter(template, snippet, newsletter, layout === 'dynamic' ? fields : undefined));
 
 	function update(id: string, value: string) {
@@ -55,7 +56,7 @@
 	</section>
 	{/if}
 	<div class="preview">
-		<NewsletterPreview source={composition.source} error={composition.error ?? ''} name={newsletter.name} utm={newsletter.utm} fields={layout === 'dynamic' ? fields : []} onUpdate={layout === 'dynamic' ? update : undefined} fieldEditor={layout === 'dynamic' ? inlineEditor : undefined} onAddItem={layout === 'dynamic' ? () => onUpdate({ ...newsletter, items: [...newsletter.items, createItem()] }) : undefined} itemActions={layout === 'dynamic' ? {
+		<NewsletterPreview source={composition.source} error={composition.error ?? ''} name={newsletter.name} utm={newsletter.utm} fields={layout === 'dynamic' ? fields : []} {fieldValues} fillViewport={layout === 'dynamic'} onUpdate={layout === 'dynamic' ? update : undefined} fieldEditor={layout === 'dynamic' ? inlineEditor : undefined} onAddItem={layout === 'dynamic' ? () => onUpdate({ ...newsletter, items: [...newsletter.items, createItem()] }) : undefined} itemActions={layout === 'dynamic' ? {
 			ids: newsletter.items.map((item) => item.id),
 			onMove: (id, direction) => onUpdate(moveNewsletterItem(newsletter, id, direction)),
 			onRemove: (id) => onUpdate({ ...newsletter, items: newsletter.items.filter((item) => item.id !== id) })

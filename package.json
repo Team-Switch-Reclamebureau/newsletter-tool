@@ -36,6 +36,16 @@
 		"vite": "^8.3.0"
 	},
 	"dependencies": {
+		"@tiptap/core": "^3.31.4",
+		"@tiptap/extension-bold": "^3.31.4",
+		"@tiptap/extension-document": "^3.31.4",
+		"@tiptap/extension-hard-break": "^3.31.4",
+		"@tiptap/extension-italic": "^3.31.4",
+		"@tiptap/extension-link": "^3.31.4",
+		"@tiptap/extension-paragraph": "^3.31.4",
+		"@tiptap/extension-text": "^3.31.4",
+		"@tiptap/extensions": "^3.31.4",
+		"@tiptap/pm": "^3.31.4",
 		"nodemailer": "^10.0.16",
 		"parse5": "^8.0.0",
 		"better-auth": "^1.7.7",

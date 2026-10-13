@@ -2,6 +2,7 @@ import { DEFAULT_ITEM_SNIPPET, MAX_TEMPLATE_BYTES } from './remote';
 import { fieldError, fieldValue, templateFields, validFieldValues, validHttpUrl, type FieldValues } from './template-fields';
 import { EMPTY_UTM, parseUtm, type UtmSettings } from './utm';
 import { markPreviewFields, type PreviewField } from './preview-fields';
+import { escapeMarkup, renderRichText } from './rich-text';
 export { validHttpUrl } from './template-fields';
 
 export interface NewsletterItem {
@@ -103,12 +104,6 @@ export function parseNewsletter(contents: string): Newsletter {
 	return newsletter;
 }
 
-function escapeMarkup(value: string): string {
-	return value.replace(/[&<>"']/g, (character) => ({
-		'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-	})[character] ?? character);
-}
-
 export function defaultItemSnippet(item: NewsletterItem): string {
 	let source = DEFAULT_ITEM_SNIPPET;
 	if (!fieldValue(item.fields, 'image')) source = source.replace(/<mj-image\b[^>]*\/>/, '');
@@ -156,8 +151,8 @@ export function composeNewsletter(template: string, snippet: string | null, news
 			const key = tag.trim();
 			if (key.includes(':')) {
 				const [type, name] = key.split(':').map((part) => part.trim());
-				const value = escapeMarkup(fieldValue(item.fields, name));
-				return type === 'textarea' ? value.replace(/\r?\n/g, '<br />') : value;
+				const value = fieldValue(item.fields, name);
+				return type === 'textarea' ? renderRichText(value) : escapeMarkup(value);
 			}
 			return '';
 		}) + '\n';
@@ -168,8 +163,8 @@ export function composeNewsletter(template: string, snippet: string | null, news
 		const key = tag.trim();
 		if (key.includes(':')) {
 			const [type, name] = key.split(':').map((part) => part.trim());
-			const value = escapeMarkup(fieldValue(newsletter?.fields, name));
-			return type === 'textarea' ? value.replace(/\r?\n/g, '<br />') : value;
+			const value = fieldValue(newsletter?.fields, name);
+			return type === 'textarea' ? renderRichText(value) : escapeMarkup(value);
 		}
 		if (key === 'items') return itemMarkup;
 		if (key === 'newsletter_name') return escapeMarkup(newsletter?.name ?? '');

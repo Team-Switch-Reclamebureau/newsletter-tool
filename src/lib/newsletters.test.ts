@@ -5,6 +5,7 @@ import {
 } from './newsletters';
 import { MAX_TEMPLATE_BYTES } from './remote';
 import { renderTemplate } from './server/render';
+import { encodeRichText, RICH_TEXT_PREFIX } from './rich-text';
 
 const template = '<mjml><mj-body>{{items}}</mj-body></mjml>';
 
@@ -18,6 +19,39 @@ function edition(): Newsletter {
 }
 
 describe('newsletter data', () => {
+	it('round-trips and renders formatted campaign and item text without changing plain fields', async () => {
+		const newsletter = edition();
+		const formatted = encodeRichText({ type: 'doc', content: [
+			{ type: 'paragraph', content: [{ type: 'text', text: 'Bold & <safe>', marks: [{ type: 'bold' }] }] },
+			{ type: 'paragraph', content: [{ type: 'text', text: 'Italic', marks: [{ type: 'italic' }] }] }
+		] });
+		newsletter.fields = { introduction: formatted };
+		newsletter.items[0].fields.text = formatted;
+		newsletter.items[0].fields.title = '<strong>Literal title</strong>';
+		const restored = parseNewsletter(serializeNewsletter(newsletter));
+		expect(restored).toEqual(newsletter);
+		const main = template.replace('{{items}}', '<mj-section><mj-column><mj-text>{{textarea:introduction}}</mj-text></mj-column></mj-section>{{items}}');
+		const composed = composeNewsletter(main, null, restored);
+		expect(composed.error).toBeNull();
+		expect(composed.source.match(/<strong>Bold &amp; &lt;safe&gt;<\/strong><br \/><em>Italic<\/em>/g)).toHaveLength(2);
+		const rendered = await renderTemplate(composed.source);
+		expect(rendered.errors).toEqual([]);
+		expect(rendered.html).toContain('<strong>Bold &amp; &lt;safe&gt;</strong>');
+		expect(rendered.html).toContain('&lt;strong&gt;Literal title&lt;/strong&gt;');
+		expect(rendered.html).not.toContain(RICH_TEXT_PREFIX);
+		expect(rendered.html).not.toContain('ProseMirror');
+	});
+
+	it('rejects unsafe rich text before composing campaign or item MJML', () => {
+		const newsletter = edition();
+		const unsafe = RICH_TEXT_PREFIX + JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'image', attrs: { src: 'javascript:alert(1)' } }] }] });
+		newsletter.items[0].fields.text = unsafe;
+		expect(composeNewsletter(template, null, newsletter)).toMatchObject({ source: '', error: expect.stringContaining('Item 1: Field "text": Invalid formatted text') });
+		newsletter.items[0].fields.text = 'Plain again';
+		newsletter.fields = { introduction: unsafe };
+		expect(composeNewsletter(template.replace('{{items}}', '{{textarea:introduction}}{{items}}'), null, newsletter).error).toContain('Field "introduction": Invalid formatted text');
+	});
+
 	it('moves items in either direction without changing identities, fields, or the original draft', () => {
 		const newsletter = edition();
 		newsletter.items.push({ ...createItem(), fields: { title: 'Second' } }, { ...createItem(), fields: { title: 'Third' } });

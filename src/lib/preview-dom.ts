@@ -1,4 +1,5 @@
 import { previewItemClass, type PreviewField } from './preview-fields';
+import { createRichTextEditor } from './rich-text-editor';
 
 export interface PreviewAnchor {
 	left: number;
@@ -9,6 +10,10 @@ export interface PreviewItemActions {
 	ids: string[];
 	onMove: (id: string, direction: -1 | 1) => void;
 	onRemove: (id: string) => void;
+}
+
+export function previewViewportHeight(viewportHeight: number, documentTop: number): number {
+	return Math.max(320, Math.floor(viewportHeight - documentTop - 16));
 }
 
 export function previewText(element: { innerText: string }): string {
@@ -23,10 +28,12 @@ export function enablePreviewEditing(
 	onSelect: (id: string, anchor?: PreviewAnchor) => void,
 	onUpdate: (id: string, value: string) => void,
 	onEditing: (editing: boolean) => void,
-	itemActions?: PreviewItemActions
+	itemActions?: PreviewItemActions,
+	fieldValues: Record<string, string> = {}
 ): () => void {
 	const controller = new AbortController();
 	const options = { signal: controller.signal };
+	const richEditors: ReturnType<typeof createRichTextEditor>[] = [];
 	const style = document.createElement('style');
 	style.textContent = `
 		[data-newsletter-field] { cursor: text; min-width: 1ch; display: inline-block; white-space: pre-wrap; }
@@ -57,7 +64,18 @@ export function enablePreviewEditing(
 		for (const element of document.querySelectorAll<HTMLElement>(`[data-newsletter-field="${field.id}"]`)) {
 			element.tabIndex = 0;
 			element.setAttribute('aria-label', `Edit ${field.label}`);
-			const inline = field.type === 'text' || field.type === 'textarea';
+			if (field.type === 'textarea') {
+				if (!Object.hasOwn(fieldValues, field.id)) throw new Error(`Missing preview value for ${field.label}.`);
+				element.removeAttribute('tabindex');
+				richEditors.push(createRichTextEditor(element, fieldValues[field.id], {
+					label: `Edit ${field.label}`,
+					inline: true,
+					onUpdate: (value) => onUpdate(field.id, value),
+					onFocusChange: onEditing
+				}));
+				continue;
+			}
+			const inline = field.type === 'text';
 			if (!inline) {
 				element.addEventListener('focus', () => select(field, element), options);
 				continue;
@@ -66,12 +84,12 @@ export function enablePreviewEditing(
 			element.normalize();
 			element.contentEditable = 'plaintext-only';
 			element.setAttribute('role', 'textbox');
-			element.setAttribute('aria-multiline', String(field.type === 'textarea'));
+			element.setAttribute('aria-multiline', 'false');
 			element.addEventListener('focus', () => { onEditing(true); onSelect(field.id); }, options);
 			element.addEventListener('input', () => onUpdate(field.id, previewText(element)), options);
 			element.addEventListener('blur', () => onEditing(false), options);
 			element.addEventListener('keydown', (event) => {
-				if (event.key === 'Escape' || (event.key === 'Enter' && field.type !== 'textarea')) {
+				if (event.key === 'Escape' || event.key === 'Enter') {
 					event.preventDefault();
 					element.blur();
 				}
@@ -153,9 +171,13 @@ export function enablePreviewEditing(
 	document.addEventListener('load', positionTools, { ...options, capture: true });
 	positionTools();
 	document.addEventListener('click', (event) => {
-		event.preventDefault();
 		const target = event.target;
 		if (!(target instanceof document.defaultView!.Element)) return;
+		if (target.closest('.newsletter-rich-editor')) {
+			if (target.closest('a')) event.preventDefault();
+			return;
+		}
+		event.preventDefault();
 		const inline = target.closest('[data-newsletter-field]')?.getAttribute('data-newsletter-field');
 		const wrapper = target.closest('[data-newsletter-target]')?.getAttribute('data-newsletter-target');
 		const field = fields.find((field) => field.id === inline)
@@ -168,6 +190,7 @@ export function enablePreviewEditing(
 	document.addEventListener('submit', (event) => event.preventDefault(), options);
 	return () => {
 		controller.abort();
+		for (const editor of richEditors) editor.destroy();
 		observer.disconnect();
 		for (const { container } of tools) container.remove();
 		style.remove();

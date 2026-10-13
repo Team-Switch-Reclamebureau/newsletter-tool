@@ -4,15 +4,17 @@
 	import type { RenderResult } from './server/render';
 	import { EMPTY_UTM, type UtmSettings } from './utm';
 	import type { PreviewField } from './preview-fields';
-	import { enablePreviewEditing, type PreviewAnchor, type PreviewItemActions } from './preview-dom';
+	import { enablePreviewEditing, previewViewportHeight, type PreviewAnchor, type PreviewItemActions } from './preview-dom';
 
-	let { source, error = '', name, utm = EMPTY_UTM, fields = [], onUpdate, fieldEditor, itemActions, onAddItem }: {
+	let { source, error = '', name, utm = EMPTY_UTM, fields = [], fieldValues = {}, onUpdate, fieldEditor, itemActions, onAddItem, fillViewport = false }: {
 		source: string; error?: string; name: string; utm?: UtmSettings;
 		fields?: PreviewField[];
+		fieldValues?: Record<string, string>;
 		onUpdate?: (id: string, value: string) => void;
 		fieldEditor?: Snippet<[PreviewField]>;
 		itemActions?: PreviewItemActions;
 		onAddItem?: () => void;
+		fillViewport?: boolean;
 	} = $props();
 	let html = $state('');
 	let message = $state('');
@@ -24,6 +26,7 @@
 	let editing = $state(false);
 	let frame = $state<HTMLIFrameElement>();
 	let panel = $state<HTMLElement>();
+	let viewportHeight = $state<number>();
 	let popover = $state<HTMLDivElement>();
 	let selection = $state<{ id: string; left: number; top: number } | null>(null);
 	let trigger: HTMLElement | null = null;
@@ -67,11 +70,26 @@
 			ids: itemActions.ids,
 			onMove: (id, direction) => { selection = null; itemActions?.onMove(id, direction); },
 			onRemove: (id) => { selection = null; itemActions?.onRemove(id); }
-		} : undefined);
+		} : undefined, fieldValues);
 	}
 
 	$effect(() => () => cleanupEditing?.());
 	$effect(() => { if (!editable || (selection && !selected)) selection = null; });
+	$effect(() => {
+		if (!fillViewport || !panel) return;
+		const element = panel;
+		function resize() {
+			viewportHeight = previewViewportHeight(window.innerHeight, element.getBoundingClientRect().top + window.scrollY);
+		}
+		const observer = new ResizeObserver(resize);
+		for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+			observer.observe(ancestor);
+			for (let sibling = ancestor.previousElementSibling; sibling; sibling = sibling.previousElementSibling) observer.observe(sibling);
+		}
+		window.addEventListener('resize', resize);
+		resize();
+		return () => { observer.disconnect(); window.removeEventListener('resize', resize); };
+	});
 
 	$effect(() => {
 		const mjml = source;
@@ -104,7 +122,7 @@
 	});
 </script>
 
-<section bind:this={panel} class="preview-panel" aria-label="Newsletter preview" aria-busy={loading}>
+<section bind:this={panel} class="preview-panel" class:fill-viewport={fillViewport} style:height={fillViewport && viewportHeight !== undefined ? `${viewportHeight}px` : undefined} aria-label="Newsletter preview" aria-busy={loading}>
 	<div class="toolbar"><h2>Preview</h2>{#if onAddItem}<button class="add-item" onclick={() => { selection = null; editing = false; onAddItem?.(); }}>+ Add item</button>{/if}<div><button class:active={!mobile} aria-pressed={!mobile} onclick={() => mobile = false}>Desktop</button><button class:active={mobile} aria-pressed={mobile} onclick={() => mobile = true}>Mobile</button></div></div>
 	<div class="canvas" class:mobile>
 		{#if loading}<p role="status">Putting your preview together…</p>
@@ -124,7 +142,11 @@
 
 <style>
 	.preview-panel { position: relative; border: 1px solid var(--ui-border, #dce2d4); border-radius: 9px; overflow: hidden; background: var(--ui-surface, #fcfdfb); min-width: 0; }
-	.field-popover { position: absolute; z-index: 2; box-sizing: border-box; width: 320px; max-width: calc(100% - 16px); max-height: 480px; overflow-y: auto; padding: 16px; border: 1px solid var(--ui-border, #dce2d4); border-radius: 8px; background: var(--ui-surface, #fcfdfb); box-shadow: 0 6px 24px #0003; }
+	.fill-viewport { box-sizing: border-box; display: flex; flex-direction: column; min-height: 320px; }
+	.fill-viewport .canvas { height: auto; min-height: 0; flex: 1; }
+	.fill-viewport .toolbar, .fill-viewport .footer { flex-shrink: 0; }
+	.fill-viewport details { max-height: 25%; overflow-y: auto; flex-shrink: 0; }
+	.field-popover { position: absolute; z-index: 2; box-sizing: border-box; width: 320px; max-width: calc(100% - 16px); max-height: min(480px, calc(100% - 82px)); overflow-y: auto; padding: 16px; border: 1px solid var(--ui-border, #dce2d4); border-radius: 8px; background: var(--ui-surface, #fcfdfb); box-shadow: 0 6px 24px #0003; }
 	.popover-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 	.popover-heading button { background: var(--ui-active, #e7efdc); color: var(--ui-text, #3f5734); }
 	.toolbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 17px; height: 58px; border-bottom: 1px solid var(--ui-border, #e5e9df); }
