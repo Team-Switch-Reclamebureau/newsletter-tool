@@ -42,6 +42,9 @@
 		addingMember: boolean;
 		removingMemberId: string | null;
 		templateSaving: boolean;
+		nameSaving: boolean;
+		projectDeleting: boolean;
+		deleteConfirmation: string;
 		uploading: boolean;
 		libraryUploadTotal: number;
 		libraryUploads: ImageUploadResult[];
@@ -53,7 +56,7 @@
 		testRecipientsSaving: boolean;
 		testEmailSending: boolean;
 	}
-	type Mode = 'editions' | 'templates' | 'project-images' | 'sharing'
+	type Mode = 'editions' | 'templates' | 'project-images' | 'sharing' | 'project-settings'
 		| 'content' | 'edition-settings' | 'edition-images' | 'edition-publish';
 
 	let { data }: { data: PageData } = $props();
@@ -102,10 +105,11 @@
 	const dirty = $derived(draft ? serializeNewsletter(draft.newsletter) !== draft.snapshot : false);
 	const templateDirty = $derived(context ? templateSnapshot(context) !== context.projectSnapshot : false);
 	const recipientsDirty = $derived(context ? testRecipientsDirty(context) : false);
+	const nameDirty = $derived(context ? context.name !== context.project.name : false);
 	const unsaved = $derived(Object.values(contexts).some((value) =>
-		templateSnapshot(value) !== value.projectSnapshot
+		!value.project.deletionPending && (value.name !== value.project.name || templateSnapshot(value) !== value.projectSnapshot
 		|| testRecipientsDirty(value)
-		|| value.drafts.some((entry) => serializeNewsletter(entry.newsletter) !== entry.snapshot)));
+		|| value.drafts.some((entry) => serializeNewsletter(entry.newsletter) !== entry.snapshot))));
 
 	$effect(() => { projects = data.projects.map((project) => ({ ...project })); });
 	$effect(() => { editorLayout = data.preferences.editorLayout; });
@@ -120,8 +124,8 @@
 		if (unsaved) { event.preventDefault(); event.returnValue = ''; }
 	}
 
-	function templateSnapshot(value: Pick<ProjectContext, 'name' | 'template' | 'snippet'>) {
-		return JSON.stringify({ name: value.name, template: value.template, snippet: value.snippet });
+	function templateSnapshot(value: Pick<ProjectContext, 'template' | 'snippet'>) {
+		return JSON.stringify({ template: value.template, snippet: value.snippet });
 	}
 
 	function testRecipientsDirty(value: ProjectContext) {
@@ -153,7 +157,7 @@
 		newEdition = false;
 		cloneSourceId = null;
 		memberEmail = '';
-		if (contexts[id]) { loading = false; mode = 'editions'; return; }
+		if (contexts[id]) { loading = false; mode = contexts[id].project.deletionPending ? 'project-settings' : 'editions'; return; }
 		loading = true;
 		try {
 			const [editions, images, recipients] = await Promise.all([
@@ -174,13 +178,14 @@
 				activeId: null,
 				assets: images.assets,
 				members: null, membersLoading: false, addingMember: false, removingMemberId: null,
+				nameSaving: false, projectDeleting: false, deleteConfirmation: '',
 				templateSaving: false, uploading: false, libraryUploadTotal: 0, libraryUploads: [],
 				libraryUploadDestination: '',
 				deletingAssetId: null, deletingEditionId: null,
 				testRecipients: recipients.settings.recipients.join(', '), testRecipientsSettings: recipients.settings,
 				testRecipientsSaving: false, testEmailSending: false
 			};
-			mode = 'editions';
+			mode = project.deletionPending ? 'project-settings' : 'editions';
 		} catch (cause) { if (version === selectionVersion) toasts.error(message(cause)); }
 		finally { if (version === selectionVersion) loading = false; }
 	}
@@ -332,23 +337,22 @@
 
 	async function saveTemplates(event: SubmitEvent) {
 		event.preventDefault();
-		if (!context || context.templateSaving) return;
+		if (!context || context.templateSaving || context.nameSaving || context.projectDeleting) return;
 		const current = context;
 		current.templateSaving = true;
 		const submitted = templateSnapshot(current);
 		try {
 			const result = await requestJson<{ project: RemoteProject }>(`/api/projects/${current.project.id}`, jsonRequest('PATCH', {
-				name: current.name, template: current.template, itemTemplate: current.snippet || null, revision: current.project.revision
+				name: current.project.name, template: current.template, itemTemplate: current.snippet || null, revision: current.project.revision
 			}));
 			current.project = result.project;
-			current.projectSnapshot = templateSnapshot({ name: result.project.name, template: result.project.template, snippet: result.project.itemTemplate ?? '' });
+			current.projectSnapshot = templateSnapshot({ template: result.project.template, snippet: result.project.itemTemplate ?? '' });
 			if (templateSnapshot(current) === submitted) {
-				current.name = result.project.name;
 				current.template = result.project.template;
 				current.snippet = result.project.itemTemplate ?? '';
 			}
 			projects = projects.map((project) => project.id === result.project.id ? result.project : project);
-			toasts.success('Project settings and templates saved.');
+			toasts.success('Project templates saved.');
 		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.templateSaving = false; }
 	}
@@ -528,7 +532,7 @@
 	async function saveTestRecipients(event: SubmitEvent) {
 		event.preventDefault();
 		const current = context;
-		if (!current || current.testRecipientsSaving || current.testEmailSending) return;
+		if (!current || current.testRecipientsSaving || current.testEmailSending || current.projectDeleting) return;
 		current.testRecipientsSaving = true;
 		try {
 			const result = await requestJson<{ settings: TestRecipientsSettings }>(
@@ -559,8 +563,83 @@
 		finally { current.testEmailSending = false; }
 	}
 
+	async function saveProjectName(event: SubmitEvent) {
+		event.preventDefault();
+		const current = context;
+		if (!current || current.nameSaving || current.templateSaving || current.projectDeleting) return;
+		const submitted = current.name;
+		current.nameSaving = true;
+		try {
+			const result = await requestJson<{ project: RemoteProject }>(
+				`/api/projects/${current.project.id}/settings`,
+				jsonRequest('PATCH', { name: submitted, revision: current.project.revision }));
+			current.project = result.project;
+			if (current.name === submitted) current.name = result.project.name;
+			current.deleteConfirmation = '';
+			projects = projects.map((project) => project.id === result.project.id ? result.project : project);
+			toasts.success('Project name saved.');
+		} catch (cause) { toasts.error(message(cause)); }
+		finally { current.nameSaving = false; }
+	}
+
+	async function forgetProject(current: ProjectContext) {
+		projects = projects.filter((project) => project.id !== current.project.id);
+		delete contexts[current.project.id];
+		if (projectId === current.project.id) {
+			++selectionVersion;
+			projectId = '';
+			loading = false;
+			mode = 'editions';
+			newEdition = false;
+			cloneSourceId = null;
+			if (projects.length) await selectProject(projects[0].id);
+		}
+	}
+
+	async function deleteProject(event: SubmitEvent) {
+		event.preventDefault();
+		const current = context;
+		if (!current || current.projectDeleting) return;
+		if (current.project.role !== 'owner') { toasts.error('Only the project owner can delete this project.'); return; }
+		if (current.deleteConfirmation !== current.project.name) { toasts.error('Type the exact saved project name to confirm deletion.'); return; }
+		if (current.nameSaving || current.templateSaving || current.uploading || current.deletingAssetId !== null || current.deletingEditionId !== null
+			|| current.testRecipientsSaving || current.testEmailSending || current.membersLoading || current.addingMember || current.removingMemberId !== null || current.drafts.some((entry) => entry.saving)) {
+			toasts.error('Wait for the current project operation before deleting.');
+			return;
+		}
+		if (!current.project.deletionPending) {
+			const assetIds = new Set([...current.assets, ...current.drafts.flatMap((entry) => entry.editionAssets)].map((asset) => asset.id));
+			const otherSources = Object.values(contexts).filter((value) => value !== current).flatMap((value) => [
+				value.template, value.snippet, ...value.drafts.map((entry) => serializeNewsletter(entry.newsletter))
+			]);
+			if ([...assetIds].some((id) => otherSources.some((source) => source.includes(`/media/${id}.webp`)))) {
+				toasts.error('Project images are referenced in another open project or draft. Remove those references before deleting.');
+				return;
+			}
+		}
+		current.projectDeleting = true;
+		try {
+			const result = await requestJson<{ message: string }>(`/api/projects/${current.project.id}`,
+				jsonRequest('DELETE', { confirmName: current.deleteConfirmation, revision: current.project.revision }));
+			toasts.success(result.message);
+			await forgetProject(current);
+		} catch (cause) {
+			toasts.error(message(cause));
+			try {
+				const result = await requestJson<{ projects: RemoteProject[] }>('/api/projects');
+				const refreshed = result.projects.find((project) => project.id === current.project.id);
+				if (!refreshed) await forgetProject(current);
+				else if (refreshed.deletionPending) {
+					current.project = refreshed;
+					projects = projects.map((project) => project.id === refreshed.id ? refreshed : project);
+					if (context === current) { mode = 'project-settings'; newEdition = false; current.activeId = null; }
+				}
+			} catch (refreshCause) { toasts.error(`Deletion status could not be refreshed. ${message(refreshCause)}`); }
+		} finally { current.projectDeleting = false; }
+	}
+
 	async function reloadProject() {
-		if (currentDeletion) { toasts.error('Wait for campaign deletion to finish before reloading.'); return; }
+		if (currentDeletion || context?.projectDeleting || context?.nameSaving || context?.testRecipientsSaving) { toasts.error('Wait for the current project operation before reloading.'); return; }
 		if (unsaved && !window.confirm('Export any drafts you want to keep. Reloading discards unsaved changes in the selected project. Continue?')) return;
 		try {
 			const result = await requestJson<{ projects: RemoteProject[] }>('/api/projects');
@@ -642,6 +721,7 @@
 			{:else if !context}
 				<section class="panel empty-state"><h2>A place for every project.</h2><p>Create a project to start with a ready-to-use MJML template, or import your own template afterwards.</p><button class="primary" onclick={() => newProject = true}>Create your first project</button>{#if selected}<button class="secondary" onclick={reloadProject}>Reload project</button>{/if}</section>
 			{:else}
+				<fieldset class="project-content" disabled={context.projectDeleting}>
 				{#if newEdition}<form class="inline-form panel" onsubmit={createEdition}><label for="edition-name">{cloneSourceId ? 'Cloned campaign name' : 'Campaign name'}</label><input id="edition-name" bind:value={editionName} maxlength="160" required /><button class="primary" disabled={!editionName.trim()}>{cloneSourceId ? 'Clone campaign' : 'Create campaign'}</button><button class="secondary" type="button" onclick={() => { newEdition = false; cloneSourceId = null; }}>Cancel</button></form>{/if}
 				<div class="project-tools"><div class="view-tabs" aria-label={editionView ? 'Campaign views' : 'Project views'}>
 					{#if editionView}
@@ -650,14 +730,48 @@
 						<button class:active={mode === 'edition-images'} onclick={() => mode = 'edition-images'}><TabIcon name="image" />Campaign images ({draft?.editionAssets.length ?? 0})</button>
 						<button class:active={mode === 'edition-publish'} onclick={() => mode = 'edition-publish'}><TabIcon name="publish" />Test &amp; publish</button>
 					{:else}
+						{#if !context.project.deletionPending}
 						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}><TabIcon name="editions" />Campaigns ({context.drafts.length})</button>
 						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}><TabIcon name="templates" />Templates</button>
 						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}><TabIcon name="image" />Project images ({context.assets.length})</button>
 						<button class:active={mode === 'sharing'} onclick={openSharing}><TabIcon name="sharing" />Sharing</button>
+						{/if}
+						<button class:active={mode === 'project-settings'} onclick={() => mode = 'project-settings'}><TabIcon name="settings" />Project settings</button>
 					{/if}
-				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
+				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.nameSaving || context.testRecipientsSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView && !context.project.deletionPending}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
 				{#if mode === 'editions'}
 					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.testEmailSending || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
+				{:else if mode === 'project-settings'}
+					<section class="panel library project-settings" aria-labelledby="project-settings-heading">
+						<h2 id="project-settings-heading">Project settings</h2>
+						{#if context.project.deletionPending}
+							<p role="status">Deletion has started. Editing and campaign HTML links are disabled. Retry deletion below to finish removing image files.</p>
+						{:else}
+							<form onsubmit={saveProjectName}>
+								<label for="settings-project-name">Project name</label>
+								<input id="settings-project-name" bind:value={context.name} maxlength="160" required disabled={context.nameSaving || context.templateSaving} />
+								<p>Any project member can change the name. Saving it does not save or discard template or campaign drafts.</p>
+								<button class="primary" disabled={!nameDirty || !context.name.trim() || context.nameSaving || context.templateSaving}>{context.nameSaving ? 'Saving...' : 'Save project name'}</button>
+							</form>
+							<form onsubmit={saveTestRecipients}>
+								<label for="project-test-recipients">Shared test-email recipients</label>
+								<textarea id="project-test-recipients" rows="3" bind:value={context.testRecipients} maxlength={MAX_TEST_RECIPIENTS_LENGTH} disabled={context.testRecipientsSaving || context.testEmailSending} placeholder="person@example.com, colleague@example.com"></textarea>
+								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by all campaigns and members of this project. Each recipient receives a separate message.</p>
+								<button class="secondary" disabled={!recipientsDirty || context.testRecipientsSaving || context.testEmailSending}>{context.testRecipientsSaving ? 'Saving recipients...' : 'Save recipients'}</button>
+							</form>
+						{/if}
+						<section class="project-danger" aria-labelledby="delete-project-heading">
+							<h3 id="delete-project-heading">Delete project</h3>
+							{#if context.project.role === 'owner'}
+								<p>This cannot be undone. It removes this project for everyone, discards its unsaved changes, disables all campaign HTML links, and permanently deletes its shared and campaign image files. Other projects and user accounts are kept.</p>
+								<form onsubmit={deleteProject}>
+									<label for="delete-project-confirmation">Type <strong>{context.project.name}</strong> to confirm</label>
+									<input id="delete-project-confirmation" bind:value={context.deleteConfirmation} autocomplete="off" spellcheck="false" required />
+									<button class="destructive" disabled={context.projectDeleting || context.deleteConfirmation !== context.project.name || context.nameSaving || context.templateSaving || context.testRecipientsSaving || context.testEmailSending || context.uploading || context.deletingAssetId !== null || currentDeletion || context.drafts.some((entry) => entry.saving)}>{context.projectDeleting ? 'Deleting...' : context.project.deletionPending ? 'Retry Delete project' : 'Delete project'}</button>
+								</form>
+							{:else}<p>Only the project owner can delete this project.</p>{/if}
+						</section>
+					</section>
 				{:else if mode === 'sharing'}
 					<section class="panel" aria-labelledby="sharing-heading">
 						<div class="panel-toolbar"><h2 id="sharing-heading">Share this project</h2></div>
@@ -691,18 +805,16 @@
 						<section class="test-email" aria-labelledby="test-email-heading">
 							<h3 id="test-email-heading">Send a test email</h3>
 							<p>Tests use the latest saved campaign and saved project templates, not unsaved edits. They use the sender and SMTP settings configured by an administrator.</p>
-							<form onsubmit={saveTestRecipients}>
-								<label for="test-recipients">Project test recipients</label>
-								<textarea id="test-recipients" rows="3" bind:value={context.testRecipients} maxlength={MAX_TEST_RECIPIENTS_LENGTH} disabled={context.testRecipientsSaving || context.testEmailSending} placeholder="person@example.com, colleague@example.com"></textarea>
-								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by every campaign and member of the project. Each recipient receives a separate message.</p>
+							<div>
+								<p>Project test recipients: {context.testRecipientsSettings.recipients.length ? context.testRecipientsSettings.recipients.join(', ') : 'None saved.'}</p>
 								<div class="save-actions">
-									<button class="secondary" disabled={!recipientsDirty || context.testRecipientsSaving || context.testEmailSending}>{context.testRecipientsSaving ? 'Saving recipients...' : 'Save recipients'}</button>
+									<button class="secondary" type="button" onclick={() => mode = 'project-settings'}>Edit project recipients</button>
 									<button class="primary" type="button" onclick={sendTestEmail} disabled={!draft.revision || draft.saving || currentDeletion || recipientsDirty || !context.testRecipientsSettings.recipients.length || context.testRecipientsSaving || context.testEmailSending}>{context.testEmailSending ? 'Sending test...' : 'Send test email'}</button>
 								</div>
 								{#if !draft.revision}<p>Save this campaign before sending a test email.</p>{/if}
-								{#if recipientsDirty}<p>Save the recipient list before sending.</p>{/if}
+								{#if recipientsDirty}<p>Save the recipients in Project settings before sending.</p>{/if}
 								<p>SMTP acceptance does not guarantee inbox delivery. Check the recipients' inboxes and spam folders.</p>
-							</form>
+							</div>
 						</section>
 						<h3>Publish via Mailchimp</h3>
 						<p>Import this campaign into Mailchimp using its public HTML link. The link stays the same and reflects the latest saved newsletter.</p>
@@ -758,19 +870,19 @@
 						<section class="panel editor-panel" aria-label={mode === 'templates' ? 'Project templates' : 'Newsletter editor'}>
 							<div class="panel-toolbar"><h2>{mode === 'templates' ? 'Project templates' : 'Newsletter content'}</h2><small>{context.project.role === 'owner' ? 'Owner' : 'Editor'}</small></div>
 								<form class="template-form" onsubmit={saveTemplates}>
-									<label for="template-project-name">Project name</label><input id="template-project-name" bind:value={context.name} maxlength="160" required />
 									<label for="project-template">Template MJML</label><textarea id="project-template" bind:value={context.template} rows="12" spellcheck="false"></textarea>
 									<p>Place exactly one <code>{'{{items}}'}</code> inside mj-body. Use <code>{'{{newsletter_name}}'}</code> for the campaign name. Typed tags such as <code>{'{{text:headline}}'}</code> create newsletter-level fields.</p>
 									<label for="template-import">Import template.mjml</label><input id="template-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'template')} />
 									<label for="item-template">Item snippet MJML</label><textarea id="item-template" bind:value={context.snippet} rows="8" spellcheck="false" placeholder="Leave empty to use the default item layout."></textarea>
 									<p>Use <code>{'{{type:name}}'}</code> for per-item fields. Types: text, textarea, url, image, number. Untyped content placeholders are not supported. Upload shared images in Project images or campaign-only images in Campaign images, then select them in image fields.</p>
 									<label for="snippet-import">Import item.mjml</label><input id="snippet-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'snippet')} />
-									<div class="save-actions"><span>{templateDirty ? 'Unsaved project changes' : 'Project saved'}</span><button class="primary" disabled={context.templateSaving}>{context.templateSaving ? 'Saving…' : 'Save templates'}</button></div>
+									<div class="save-actions"><span>{templateDirty ? 'Unsaved template changes' : 'Templates saved'}</span><button class="primary" disabled={context.templateSaving || context.nameSaving}>{context.templateSaving ? 'Saving…' : 'Save templates'}</button></div>
 								</form>
 						</section>
 						<NewsletterPreview source={composition.source} error={composition.error ?? ''} name={(editionView ? draft?.newsletter.name : selected?.name) || 'Template'} utm={editionView ? draft?.newsletter.utm ?? EMPTY_UTM : EMPTY_UTM} />
 					</div>
 				{/if}
+				</fieldset>
 			{/if}
 			<footer>Team Switch © 2026</footer>
 		</main>
@@ -778,6 +890,12 @@
 {/if}
 
 <style>
+	.project-content { border: 0; margin: 0; padding: 0; min-width: 0; }
+	.project-settings form + form, .project-danger { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--ui-border, #dce2d4); }
+	.project-settings input { width: 100%; }
+	.project-settings form > button { margin-top: 12px; }
+	.project-danger h3 { color: #9b4335; }
+	.destructive { color: #9b4335; background: #fff2ec; border: 1px solid #eed2c6; }
 	:global(*) { box-sizing: border-box; }
 	:global(body) { margin: 0; background: #f6f7f3; color: #25382d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
 	:global(button) { font: inherit; cursor: pointer; }
@@ -877,7 +995,7 @@
 	.edition-export label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 8px; }
 	.edition-export p { margin-bottom: 0; }
 	.test-email { padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--ui-border, #dce2d4); }
-	.test-email textarea { width: 100%; resize: vertical; }
+	.project-settings textarea { width: 100%; resize: vertical; }
 	.export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 	.export-actions input { flex: 1; min-width: min(100%, 240px); }
 	.export-actions a { text-decoration: none; }

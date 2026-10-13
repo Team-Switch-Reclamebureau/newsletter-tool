@@ -9,6 +9,7 @@ type Database = Pool | PoolClient;
 interface ProjectRow {
 	id: string; name: string; template: string; item_template: string | null;
 	revision: number; role: RemoteProject['role'];
+	deleted_at: Date | null; deletion_completed_at: Date | null;
 }
 interface AssetRow {
 	scope: ImageAsset['scope'];
@@ -20,17 +21,18 @@ export interface NewsletterRow {
 }
 
 export function projectFromRow(row: ProjectRow): RemoteProject {
-	return { id: row.id, name: row.name, template: row.template, itemTemplate: row.item_template, revision: row.revision, role: row.role };
+	return { id: row.id, name: row.name, template: row.template, itemTemplate: row.item_template, revision: row.revision, role: row.role, deletionPending: row.deleted_at !== null && row.deletion_completed_at === null };
 }
 
 export async function listProjects(database: Database, userId: string) {
 	const result = await database.query<ProjectRow>(`
 		SELECT p.*, m.role FROM projects p JOIN project_members m ON m.project_id = p.id
-		WHERE m.user_id = $1 ORDER BY p.name, p.id`, [userId]);
+		WHERE m.user_id = $1 AND (p.deleted_at IS NULL OR (p.deletion_completed_at IS NULL AND m.role = 'owner'))
+		ORDER BY p.name, p.id`, [userId]);
 	return result.rows.map(projectFromRow);
 }
 
-export async function requireProject(database: Database, projectId: string, userId: string, lock = false) {
+export async function requireProject(database: Database, projectId: string, userId: string, lock = false, includeDeleted = false) {
 	if (lock) {
 		// Match account-deletion lock order, then recheck membership after waiting for the project.
 		if (!(await database.query('SELECT id FROM "user" WHERE id = $1 FOR KEY SHARE', [userId])).rowCount) error(401, 'Sign in to access this workspace.');
@@ -38,7 +40,9 @@ export async function requireProject(database: Database, projectId: string, user
 	}
 	const result = await database.query<ProjectRow>(`
 		SELECT p.*, m.role FROM projects p JOIN project_members m ON m.project_id = p.id
-		WHERE p.id = $1 AND m.user_id = $2`, [projectId, userId]);
+		WHERE p.id = $1 AND m.user_id = $2 AND (
+			p.deleted_at IS NULL OR $3 OR ($4 AND p.deletion_completed_at IS NULL AND m.role = 'owner')
+		)`, [projectId, userId, includeDeleted, !lock]);
 	if (!result.rows[0]) error(404, 'Project not found or access was not granted.');
 	return projectFromRow(result.rows[0]);
 }
@@ -52,9 +56,14 @@ export async function listProjectMembers(database: Database, projectId: string):
 	return result.rows;
 }
 
-export function projectInput(value: Record<string, unknown>) {
-	const name = typeof value.name === 'string' ? value.name.trim() : '';
+export function projectName(value: unknown) {
+	const name = typeof value === 'string' ? value.trim() : '';
 	if (!name || name.length > 160) error(400, 'Project names must contain 1–160 characters.');
+	return name;
+}
+
+export function projectInput(value: Record<string, unknown>) {
+	const name = projectName(value.name);
 	const template = value.template === undefined ? DEFAULT_TEMPLATE : value.template;
 	if (typeof template !== 'string') error(400, 'An MJML template is required.');
 	const message = validateSource(template);

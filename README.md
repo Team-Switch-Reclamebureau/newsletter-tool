@@ -122,6 +122,24 @@ campaigns, projects, browser refreshes, and sign-ins, including other devices.
 Failed preference saves are shown explicitly and restore the previous layout.
 Open a campaign from the **Campaigns** tab by clicking its name or **Open** button.
 Rename campaigns in the campaign **Settings** tab alongside UTM settings.
+The project **Project settings** tab contains its name and shared test-email
+recipients. Any member can save these settings. Name changes use project revision
+checks and do not save or discard template or campaign drafts. Test-email recipients
+use their own revision checks; **Test & publish** shows the saved list and links
+back to Project settings to edit it.
+
+Only the project owner can **Delete project**, after typing its exact saved name.
+Deletion removes access for everyone, disables all campaign HTML exports, discards
+the project's local drafts, and permanently removes its shared and campaign image
+files. It cannot be undone. Other projects and accounts are unaffected. Deletion
+is blocked if an image is referenced by another saved project or an open local
+project draft. As with campaign deletion, database tombstones and immutable
+publication history are retained, but are no longer accessible through the app.
+If file cleanup fails, the project remains visible only to its owner as pending
+deletion, with editing disabled. Reopen Project settings and retry deletion to
+finish cleanup; retries also work after a browser reload. Already downloaded or
+cached email images cannot be revoked. Migration `015-project-deletion.sql` runs
+during deployment; local development requires `npm run db:migrate`.
 The account panel at the bottom of the sidebar shows the user's profile and
 button-style actions for **Admin settings** (administrators only),
 **User settings**, and **Sign out**.

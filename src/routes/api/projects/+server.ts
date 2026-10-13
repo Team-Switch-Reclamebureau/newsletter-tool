@@ -17,7 +17,7 @@ export const POST = api(async (event) => {
 		const id = randomUUID();
 		await client.query('INSERT INTO projects(id, name, template, item_template, created_by) VALUES ($1, $2, $3, $4, $5)', [id, input.name, input.template, input.snippet, user.id]);
 		await client.query("INSERT INTO project_members(project_id, user_id, role) VALUES ($1, $2, 'owner')", [id, user.id]);
-		return { id, name: input.name, template: input.template, itemTemplate: input.snippet, revision: 1, role: 'owner' };
+		return { id, name: input.name, template: input.template, itemTemplate: input.snippet, revision: 1, role: 'owner', deletionPending: false };
 	});
 	return json({ project }, { status: 201 });
 });

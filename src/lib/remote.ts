@@ -24,6 +24,7 @@ export interface RemoteProject {
 	itemTemplate: string | null;
 	revision: number;
 	role: 'owner' | 'editor';
+	deletionPending: boolean;
 }
 
 export interface ProjectMember {
