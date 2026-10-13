@@ -12,7 +12,7 @@
 		assets?: ImageAsset[];
 		imageUploading?: boolean;
 		canUploadEditionImages?: boolean;
-		onImageUpload?: (newsletterId: string, itemId: string, fieldName: string, file: File) => Promise<void>;
+		onImageUpload?: (newsletterId: string, itemId: string, fieldName: string, file: File, applyToField?: boolean) => Promise<string>;
 	} = $props();
 	const newsletterSchema = $derived(templateFields(template, 'template'));
 	const itemSchema = $derived(templateFields(snippet ?? DEFAULT_ITEM_SNIPPET, 'item'));
@@ -26,9 +26,9 @@
 			? { ...item, fields: { ...item.fields, [name]: value } } : item) });
 	}
 
-	function uploadItemImage(itemId: string, name: string, file: File) {
+	async function uploadItemImage(itemId: string, name: string, file: File) {
 		if (!onImageUpload) throw new Error('Image uploads are not available.');
-		return onImageUpload(newsletter.id, itemId, name, file);
+		await onImageUpload(newsletter.id, itemId, name, file);
 	}
 
 </script>

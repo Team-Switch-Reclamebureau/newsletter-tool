@@ -75,8 +75,13 @@ The campaign **Content** tab offers two editor layouts:
 - **Dynamic** lets you type directly into template-driven text in the preview.
   Image and link icons sit over editable images and links, opening a nearby
   inline editor for image URLs, library choices, uploads, and destination URLs.
-  Linked images offer separate image and URL icons. Use **Done** or Escape to
-  close the editor; changes stay in the same unsaved draft. There is no permanent
+  Linked images offer separate image and URL icons. Images themselves are not
+  editing targets and do not show a hover outline; use the icons to edit them.
+  Use **Done** to
+  apply the dialog's changes to the unsaved campaign draft. Clicking outside the
+  dialog or pressing Escape cancels its changes, including image selections.
+  Uploaded files remain in Campaign images even when their selection is canceled.
+  There is no permanent
   field editor beside the preview. **All fields & items** toggles the full form
   below the preview for alt text, hidden fields, and adding, removing, reordering,
   and uploading images to items. Dynamic mode also has **Add item** in the preview

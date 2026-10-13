@@ -41,6 +41,7 @@ export function enablePreviewEditing(
 		[data-newsletter-field]:hover, [data-newsletter-field]:focus { outline: 2px solid #829e66; outline-offset: 3px; }
 		.newsletter-edit-target { cursor: pointer; }
 		.newsletter-edit-target:hover { outline: 2px dashed #829e66; outline-offset: -2px; }
+		.newsletter-image-target, .newsletter-image-target a { cursor: default; }
 		.newsletter-edit-tools { position: absolute; z-index: 1000; display: flex; gap: 4px; padding: 4px; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #0003; }
 		.newsletter-edit-tools button { display: grid; place-items: center; width: 30px; height: 30px; padding: 5px; border: 1px solid #dce2d4; border-radius: 4px; background: #fff; color: #3f5734; cursor: pointer; }
 		.newsletter-edit-tools button:hover { background: #e7efdc; }
@@ -101,16 +102,23 @@ export function enablePreviewEditing(
 		const editable = mapped.filter((field) => field.type === 'image' || field.type === 'url');
 		if (!editable.length) continue;
 		const field = editable.find((field) => field.type === 'image') ?? editable[0];
-		element.classList.add('newsletter-edit-target');
-		element.dataset.newsletterTarget = field.id;
-		element.tabIndex = 0;
-		element.setAttribute('role', 'button');
-		element.setAttribute('aria-label', `Edit ${field.label}`);
-		element.addEventListener('keydown', (event) => {
-			if (event.target !== element || !['Enter', ' '].includes(event.key)) return;
-			event.preventDefault();
-			select(field, element);
-		}, options);
+		const image = editable.some((field) => field.type === 'image') || element.matches('img') || Boolean(element.querySelector('img'));
+		if (image) {
+			element.classList.add('newsletter-image-target');
+			if (element.matches('a[href]')) element.tabIndex = -1;
+			for (const link of element.querySelectorAll<HTMLAnchorElement>('a[href]')) link.tabIndex = -1;
+		} else {
+			element.classList.add('newsletter-edit-target');
+			element.dataset.newsletterTarget = field.id;
+			element.tabIndex = 0;
+			element.setAttribute('role', 'button');
+			element.setAttribute('aria-label', `Edit ${field.label}`);
+			element.addEventListener('keydown', (event) => {
+				if (event.target !== element || !['Enter', ' '].includes(event.key)) return;
+				event.preventDefault();
+				select(field, element);
+			}, options);
+		}
 		const container = document.createElement('div');
 		container.className = 'newsletter-edit-tools';
 		for (const field of editable) {

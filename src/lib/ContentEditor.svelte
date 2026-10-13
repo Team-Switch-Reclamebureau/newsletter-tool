@@ -15,7 +15,7 @@
 		canUploadEditionImages: boolean;
 		imageUploading: boolean;
 		onUpdate: (newsletter: Newsletter) => void;
-		onImageUpload: (newsletterId: string, itemId: string, fieldName: string, file: File) => Promise<void>;
+		onImageUpload: (newsletterId: string, itemId: string, fieldName: string, file: File, applyToField?: boolean) => Promise<string>;
 		layout: EditorLayout;
 		layoutSaving?: boolean;
 		onLayoutChange: (layout: EditorLayout) => void;
@@ -31,9 +31,10 @@
 		onUpdate(updatePreviewField(newsletter, field, value));
 	}
 
-	function uploadSelectedImage(itemId: string | null, name: string, file: File) {
+	async function uploadSelectedImage(itemId: string | null, name: string, file: File, updateValue: (value: string) => void) {
 		if (itemId === null) throw new Error('Choose an item image field before uploading.');
-		return onImageUpload(newsletter.id, itemId, name, file);
+		const url = await onImageUpload(newsletter.id, itemId, name, file, false);
+		updateValue(url);
 	}
 </script>
 
@@ -61,8 +62,9 @@
 			onMove: (id, direction) => onUpdate(moveNewsletterItem(newsletter, id, direction)),
 			onRemove: (id) => onUpdate({ ...newsletter, items: newsletter.items.filter((item) => item.id !== id) })
 		} : undefined} />
-		{#snippet inlineEditor(selected: PreviewField)}
-			<TemplateFields fields={[selected]} values={{ [selected.name]: previewFieldValue(newsletter, selected) }} prefix="dynamic" {assets} {imageUploading} {canUploadEditionImages} onUpdate={(_name, value) => update(selected.id, value)} onImageUpload={selected.itemId !== null ? (name, file) => uploadSelectedImage(selected.itemId, name, file) : undefined} />
+		{#snippet inlineEditor(selected: PreviewField, value: string, updateValue: (value: string) => void)}
+			<TemplateFields fields={[selected]} values={{ [selected.name]: value }} prefix="dynamic" {assets} {imageUploading} {canUploadEditionImages} onUpdate={(_name, next) => updateValue(next)} onImageUpload={selected.itemId !== null ? (name, file) => uploadSelectedImage(selected.itemId, name, file, updateValue) : undefined} />
+			{#if selected.type === 'image' && selected.itemId !== null}<p>Uploaded files remain in Campaign images even if you cancel.</p>{/if}
 			{#if selected.type === 'image' && selected.itemId === null}<p>Upload new campaign-level images in the Campaign images tab, then select them here.</p>{/if}
 		{/snippet}
 	</div>

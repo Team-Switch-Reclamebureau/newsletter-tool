@@ -381,19 +381,20 @@
 		} finally { current.uploading = false; }
 	}
 
-	async function uploadItemImage(newsletterId: string, itemId: string, fieldName: string, file: File) {
+	async function uploadItemImage(newsletterId: string, itemId: string, fieldName: string, file: File, applyToField = true): Promise<string> {
 		const current = context;
 		if (!current) throw new Error('Choose a project first.');
 		const entry = current.drafts.find((entry) => entry.newsletter.id === newsletterId);
 		if (!entry) throw new Error('The selected campaign no longer exists.');
 		if (!entry.revision) throw new Error('Save this campaign before uploading campaign images.');
 		const asset = await uploadImage(current, file, entry);
-		if (!entry.newsletter.items.some((item) => item.id === itemId)) {
+		if (applyToField && !entry.newsletter.items.some((item) => item.id === itemId)) {
 			toasts.success('Image uploaded to campaign images. The original item no longer exists.');
-			return;
+			return asset.url;
 		}
-		entry.newsletter.items = entry.newsletter.items.map((item) => item.id === itemId ? { ...item, fields: { ...item.fields, [fieldName]: asset.url } } : item);
+		if (applyToField) entry.newsletter.items = entry.newsletter.items.map((item) => item.id === itemId ? { ...item, fields: { ...item.fields, [fieldName]: asset.url } } : item);
 		toasts.success('Image uploaded. Its public URL will remain unchanged.');
+		return asset.url;
 	}
 
 	function itemImageField() {

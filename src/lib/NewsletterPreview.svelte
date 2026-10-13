@@ -11,7 +11,7 @@
 		fields?: PreviewField[];
 		fieldValues?: Record<string, string>;
 		onUpdate?: (id: string, value: string) => void;
-		fieldEditor?: Snippet<[PreviewField]>;
+		fieldEditor?: Snippet<[PreviewField, string, (value: string) => void]>;
 		itemActions?: PreviewItemActions;
 		onAddItem?: () => void;
 		fillViewport?: boolean;
@@ -28,7 +28,8 @@
 	let panel = $state<HTMLElement>();
 	let viewportHeight = $state<number>();
 	let popover = $state<HTMLDivElement>();
-	let selection = $state<{ id: string; left: number; top: number } | null>(null);
+	let selection = $state<{ id: string; left: number; top: number; value: string; update: (value: string) => void } | null>(null);
+	let selectionVersion = 0;
 	let trigger: HTMLElement | null = null;
 	let cleanupEditing: (() => void) | undefined;
 	let scrollTop = 0;
@@ -44,8 +45,11 @@
 		const document = frame.contentDocument;
 		const active = document?.activeElement;
 		trigger = document?.defaultView && active instanceof document.defaultView.HTMLElement ? active : null;
+		const current = ++selectionVersion;
 		selection = {
 			id,
+			value: fieldValues[id] ?? '',
+			update: (value) => { if (selection && current === selectionVersion) selection.value = value; },
 			left: Math.max(8, Math.min(frameRect.left - panelRect.left + anchor.left, panelRect.width - 336)),
 			top: Math.max(66, Math.min(frameRect.top - panelRect.top + anchor.bottom + 8, panelRect.height - 240))
 		};
@@ -56,9 +60,28 @@
 		popover?.focus();
 	}
 
-	function closeEditor() {
+	function closeEditor(restoreFocus = true) {
+		selectionVersion++;
 		selection = null;
-		trigger?.focus();
+		if (restoreFocus) trigger?.focus();
+	}
+
+	function applyEditor() {
+		const edit = selection;
+		if (!edit) return;
+		closeEditor();
+		if (edit.value !== (fieldValues[edit.id] ?? '')) onUpdate?.(edit.id, edit.value);
+	}
+
+	function dismissOutside(event: MouseEvent) {
+		if (selection && (!popover || !event.composedPath().includes(popover))) closeEditor(false);
+	}
+
+	function dismissOnEscape(event: KeyboardEvent) {
+		if (selection && event.key === 'Escape') {
+			event.preventDefault();
+			closeEditor();
+		}
 	}
 
 	function frameLoaded() {
@@ -66,14 +89,30 @@
 		const document = frame?.contentDocument;
 		if (!editable || !document || !onUpdate) return;
 		frame?.contentWindow?.scrollTo(0, scrollTop);
-		cleanupEditing = enablePreviewEditing(document, fields, selectField, onUpdate, (value) => editing = value, itemActions ? {
+		document.addEventListener('click', dismissOutside, true);
+		document.addEventListener('keydown', dismissOnEscape, true);
+		const stopEditing = enablePreviewEditing(document, fields, selectField, onUpdate, (value) => editing = value, itemActions ? {
 			ids: itemActions.ids,
 			onMove: (id, direction) => { selection = null; itemActions?.onMove(id, direction); },
 			onRemove: (id) => { selection = null; itemActions?.onRemove(id); }
 		} : undefined, fieldValues);
+		cleanupEditing = () => {
+			document.removeEventListener('click', dismissOutside, true);
+			document.removeEventListener('keydown', dismissOnEscape, true);
+			stopEditing();
+		};
 	}
 
 	$effect(() => () => cleanupEditing?.());
+	$effect(() => {
+		if (!selection) return;
+		document.addEventListener('click', dismissOutside, true);
+		document.addEventListener('keydown', dismissOnEscape, true);
+		return () => {
+			document.removeEventListener('click', dismissOutside, true);
+			document.removeEventListener('keydown', dismissOnEscape, true);
+		};
+	});
 	$effect(() => { if (!editable || (selection && !selected)) selection = null; });
 	$effect(() => {
 		if (!fillViewport || !panel) return;
@@ -131,9 +170,9 @@
 		{:else}<p>No preview available.</p>{/if}
 	</div>
 	{#if selected && selection && fieldEditor}
-		<div bind:this={popover} class="field-popover" role="dialog" aria-label={`Edit ${selected.label}`} tabindex="-1" style:left={`${selection.left}px`} style:top={`${selection.top}px`} onkeydown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeEditor(); } }}>
-			<div class="popover-heading"><strong>{selected.type === 'image' ? 'Change image' : selected.type === 'url' ? 'Edit URL' : 'Edit number'}</strong><button onclick={closeEditor} aria-label="Close inline editor">Done</button></div>
-			{#key selected.id}{@render fieldEditor(selected)}{/key}
+		<div bind:this={popover} class="field-popover" role="dialog" aria-label={`Edit ${selected.label}`} tabindex="-1" style:left={`${selection.left}px`} style:top={`${selection.top}px`}>
+			<div class="popover-heading"><strong>{selected.type === 'image' ? 'Change image' : selected.type === 'url' ? 'Edit URL' : 'Edit number'}</strong><button onclick={applyEditor} aria-label="Close inline editor">Done</button></div>
+			{#key selected.id}{@render fieldEditor(selected, selection.value, selection.update)}{/key}
 		</div>
 	{/if}
 	{#if warnings.length}<details><summary>{warnings.length} MJML validation warnings</summary><ul>{#each warnings as warning}<li>{warning.message}</li>{/each}</ul></details>{/if}
