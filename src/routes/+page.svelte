@@ -14,7 +14,7 @@
 	import { uploadImages, type ImageUploadResult } from '#lib/image-uploads.js';
 	import { DEFAULT_ITEM_SNIPPET, MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ProjectMember, type RemoteProject } from '#lib/remote.js';
 	import { templateFields } from '#lib/template-fields.js';
-	import type { EditorLayout, UserPreferences } from '#lib/user-preferences.js';
+	import { DEFAULT_USER_PREFERENCES, type EditorLayout, type UserPreferences } from '#lib/user-preferences.js';
 	import { EMPTY_UTM, UTM_KEYS } from '#lib/utm.js';
 	import { useToasts } from '#lib/toast-context.js';
 	import { MAX_TEST_RECIPIENTS, MAX_TEST_RECIPIENTS_LENGTH, type TestEmailResult, type TestRecipientsSettings } from '#lib/test-recipients.js';
@@ -74,7 +74,7 @@
 	let editionName = $state('');
 	let cloneSourceId = $state<string | null>(null);
 	let memberEmail = $state('');
-	let editorLayout = $state<EditorLayout>('split');
+	let editorLayout = $state<EditorLayout>(DEFAULT_USER_PREFERENCES.editorLayout);
 	let layoutSaving = $state(false);
 	let signingOut = $state(false);
 	let sidebarOpen = $state(false);

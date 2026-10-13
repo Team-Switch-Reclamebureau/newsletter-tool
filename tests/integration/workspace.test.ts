@@ -99,17 +99,17 @@ describe('self-hosted workspace against PostgreSQL', () => {
 	it('persists editor layout per user across sign-ins and rejects invalid or cross-origin updates', async () => {
 		const path = '/api/account/preferences';
 		expect((await request(path, 'GET', undefined, '')).status).toBe(401);
-		expect((await (await request(path)).json()).preferences).toEqual({ editorLayout: 'split' });
+		expect((await (await request(path)).json()).preferences).toEqual({ editorLayout: 'dynamic' });
 		expect((await request(path, 'PATCH', { editorLayout: 'dynamic' }, ownerCookie, 'https://untrusted.example')).status).toBe(403);
 		for (const body of [{}, { editorLayout: 'preview' }, { editorLayout: null }, { editorLayout: 'dynamic', userId: 'another-user' }]) {
 			expect((await request(path, 'PATCH', body)).status).toBe(400);
 		}
-		const saved = await request(path, 'PATCH', { editorLayout: 'dynamic' });
+		const saved = await request(path, 'PATCH', { editorLayout: 'split' });
 		expect(saved.status).toBe(200);
-		expect((await saved.json()).preferences).toEqual({ editorLayout: 'dynamic' });
-		expect((await (await request(path, 'GET', undefined, outsiderCookie)).json()).preferences).toEqual({ editorLayout: 'split' });
+		expect((await saved.json()).preferences).toEqual({ editorLayout: 'split' });
+		expect((await (await request(path, 'GET', undefined, outsiderCookie)).json()).preferences).toEqual({ editorLayout: 'dynamic' });
 		const newSession = await login('owner@example.test');
-		expect((await (await request(path, 'GET', undefined, newSession)).json()).preferences).toEqual({ editorLayout: 'dynamic' });
+		expect((await (await request(path, 'GET', undefined, newSession)).json()).preferences).toEqual({ editorLayout: 'split' });
 		const workspace = await request('/');
 		expect(workspace.status).toBe(200);
 		const html = await workspace.text();

@@ -82,9 +82,8 @@ The campaign **Content** tab offers two editor layouts:
   dialog or pressing Escape cancels its changes, including image selections.
   Uploaded files remain in Campaign images even when their selection is canceled.
   There is no permanent
-  field editor beside the preview. **All fields & items** toggles the full form
-  below the preview for alt text, hidden fields, and adding, removing, reordering,
-  and uploading images to items. Dynamic mode has **Add item** inside the preview,
+  field editor beside the preview. Switch to **Split** for the full form,
+  including alt text and hidden fields. Dynamic mode has **Add item** inside the preview,
   below the last item (or at the empty items location), and move-up, move-down,
   and remove icons on each rendered item.
   The Dynamic preview fills the available window height below the campaign
@@ -125,6 +124,8 @@ interrupt the cursor. Static template
 content and styling stay in the Templates tab. Preview links do not navigate,
 and template scripts remain disabled. Use **Save campaign** to persist changes;
 editor-only field markers are never included in saved content or HTML exports.
+Dynamic is the default layout and appears to the left of Split in the layout
+switch. Explicitly saved preferences, including Split, are preserved.
 The layout preference is stored with each user account and restored across
 campaigns, projects, browser refreshes, and sign-ins, including other devices.
 Failed preference saves are shown explicitly and restore the previous layout.

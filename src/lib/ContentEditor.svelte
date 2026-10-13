@@ -20,7 +20,6 @@
 		layoutSaving?: boolean;
 		onLayoutChange: (layout: EditorLayout) => void;
 	} = $props();
-	let showAll = $state(false);
 	const fields = $derived(previewFields(template, snippet, newsletter));
 	const fieldValues = $derived(Object.fromEntries(fields.map((field) => [field.id, previewFieldValue(newsletter, field)])));
 	const composition = $derived(composeNewsletter(template, snippet, newsletter, layout === 'dynamic' ? fields : undefined, true));
@@ -40,15 +39,13 @@
 
 <div class="mode-toolbar">
 	<div class="mode-switch" aria-label="Content editor layout">
-		<button class:active={layout === 'split'} aria-pressed={layout === 'split'} disabled={layoutSaving} onclick={() => onLayoutChange('split')}>Split</button>
 		<button class:active={layout === 'dynamic'} aria-pressed={layout === 'dynamic'} disabled={layoutSaving} onclick={() => onLayoutChange('dynamic')}>Dynamic</button>
+		<button class:active={layout === 'split'} aria-pressed={layout === 'split'} disabled={layoutSaving} onclick={() => onLayoutChange('split')}>Split</button>
 	</div>
-	<p>{layout === 'split' ? 'Edit fields alongside the live preview.' : 'Type directly into preview text. Use image and link icons to edit inline.'}</p>
-	{#if layout === 'dynamic'}<button class="all-fields" aria-pressed={showAll} onclick={() => showAll = !showAll}>{showAll ? 'Hide fields & items' : 'All fields & items'}</button>{/if}
 	{#if layoutSaving}<span role="status">Saving your layout...</span>{/if}
 </div>
 <div class="content-grid" class:dynamic={layout === 'dynamic'}>
-	{#if layout === 'split' || showAll}
+	{#if layout === 'split'}
 	<section class="editor-panel" aria-label="Newsletter content">
 		<div class="panel-toolbar">
 			<h2>Newsletter content</h2>
@@ -83,7 +80,6 @@
 	.editor-panel { min-width: 0; border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); background: var(--ui-surface, #fcfdfb); overflow: hidden; }
 	.panel-toolbar { display: flex; justify-content: space-between; align-items: center; height: 58px; padding: 14px 18px; border-bottom: 1px solid var(--ui-border, #e1e8d8); }
 	h2 { font-size: 12px; margin: 0; }
-	.all-fields { padding: 6px; background: var(--ui-soft, #f2f5ec); }
 	.preview { min-width: 0; }
 	@media (max-width: 1100px) { .content-grid { grid-template-columns: minmax(0, 1fr); } .dynamic .preview { grid-row: 1; } }
 </style>

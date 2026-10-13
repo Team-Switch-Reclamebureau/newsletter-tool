@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_USER_PREFERENCES, parseEditorLayout } from './user-preferences';
 
 describe('user editor preferences', () => {
-	it('defaults new users to Split and accepts both supported layouts', () => {
-		expect(DEFAULT_USER_PREFERENCES).toEqual({ editorLayout: 'split' });
+	it('defaults new users to Dynamic and accepts both supported layouts', () => {
+		expect(DEFAULT_USER_PREFERENCES).toEqual({ editorLayout: 'dynamic' });
 		expect(parseEditorLayout('split')).toBe('split');
 		expect(parseEditorLayout('dynamic')).toBe('dynamic');
 	});
