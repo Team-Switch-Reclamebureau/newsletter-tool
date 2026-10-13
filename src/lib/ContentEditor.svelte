@@ -4,7 +4,7 @@
 	import TemplateFields from './TemplateFields.svelte';
 	import { composeNewsletter, createItem, moveNewsletterItem, type Newsletter } from './newsletters';
 	import { previewFields, previewFieldValue, updatePreviewField, type PreviewField } from './preview-fields';
-	import type { ImageAsset, ImageScope } from './remote';
+	import type { ImageAsset } from './remote';
 	import type { EditorLayout } from './user-preferences';
 
 	let { newsletter, template, snippet, assets, canUploadEditionImages, imageUploading, onUpdate, onImageUpload, layout, layoutSaving = false, onLayoutChange }: {
@@ -15,7 +15,7 @@
 		canUploadEditionImages: boolean;
 		imageUploading: boolean;
 		onUpdate: (newsletter: Newsletter) => void;
-		onImageUpload: (newsletterId: string, itemId: string, fieldName: string, file: File, scope: ImageScope) => Promise<void>;
+		onImageUpload: (newsletterId: string, itemId: string, fieldName: string, file: File) => Promise<void>;
 		layout: EditorLayout;
 		layoutSaving?: boolean;
 		onLayoutChange: (layout: EditorLayout) => void;
@@ -23,7 +23,7 @@
 	let showAll = $state(false);
 	const fields = $derived(previewFields(template, snippet, newsletter));
 	const fieldValues = $derived(Object.fromEntries(fields.map((field) => [field.id, previewFieldValue(newsletter, field)])));
-	const composition = $derived(composeNewsletter(template, snippet, newsletter, layout === 'dynamic' ? fields : undefined));
+	const composition = $derived(composeNewsletter(template, snippet, newsletter, layout === 'dynamic' ? fields : undefined, true));
 
 	function update(id: string, value: string) {
 		const field = fields.find((field) => field.id === id);
@@ -31,9 +31,9 @@
 		onUpdate(updatePreviewField(newsletter, field, value));
 	}
 
-	function uploadSelectedImage(itemId: string | null, name: string, file: File, scope: ImageScope) {
+	function uploadSelectedImage(itemId: string | null, name: string, file: File) {
 		if (itemId === null) throw new Error('Choose an item image field before uploading.');
-		return onImageUpload(newsletter.id, itemId, name, file, scope);
+		return onImageUpload(newsletter.id, itemId, name, file);
 	}
 </script>
 
@@ -62,8 +62,8 @@
 			onRemove: (id) => onUpdate({ ...newsletter, items: newsletter.items.filter((item) => item.id !== id) })
 		} : undefined} />
 		{#snippet inlineEditor(selected: PreviewField)}
-			<TemplateFields fields={[selected]} values={{ [selected.name]: previewFieldValue(newsletter, selected) }} prefix="dynamic" {assets} {imageUploading} {canUploadEditionImages} onUpdate={(_name, value) => update(selected.id, value)} onImageUpload={selected.itemId !== null ? (name, file, scope) => uploadSelectedImage(selected.itemId, name, file, scope) : undefined} />
-			{#if selected.type === 'image' && selected.itemId === null}<p>Upload new campaign-level images in the Images tabs, then select them here.</p>{/if}
+			<TemplateFields fields={[selected]} values={{ [selected.name]: previewFieldValue(newsletter, selected) }} prefix="dynamic" {assets} {imageUploading} {canUploadEditionImages} onUpdate={(_name, value) => update(selected.id, value)} onImageUpload={selected.itemId !== null ? (name, file) => uploadSelectedImage(selected.itemId, name, file) : undefined} />
+			{#if selected.type === 'image' && selected.itemId === null}<p>Upload new campaign-level images in the Campaign images tab, then select them here.</p>{/if}
 		{/snippet}
 	</div>
 </div>

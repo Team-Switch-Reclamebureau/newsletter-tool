@@ -37,7 +37,9 @@ Project images are available
 in every campaign; campaign images appear only in that campaign's image choices
 and its clones. Open and save a campaign before uploading campaign-only images.
 Both scopes appear as separate groups in typed image selectors.
-Direct item uploads also offer a project/campaign destination.
+Uploads from the campaign editor always belong to that campaign. Save a new
+campaign first to enable uploads. To add shared project images, upload directly
+in **Project images**; existing project images can still be selected in campaigns.
 Existing images remain project-wide after upgrading.
 
 Campaign scope controls editing and image selection, not private delivery:
@@ -163,6 +165,11 @@ project or starting a new project closes it. Use its close button, Escape, or
 the backdrop to dismiss it. Desktop navigation remains visible.
 
 Action feedback appears as dismissible toasts instead of banners in the editor.
+Empty image fields show a neutral crossed-image placeholder in Split, Dynamic,
+and template previews. Dynamic placeholders keep the inline image-selection
+controls available. Selecting an image replaces the placeholder; clearing it
+restores the placeholder. These placeholders are preview-only and are never
+stored in campaign fields or included in HTML exports or test emails.
 Success notifications disappear after five seconds, with the timer paused while
 hovered or keyboard-focused. Errors remain until dismissed. The same notification
 system is used for administrator and password actions; inline validation, preview

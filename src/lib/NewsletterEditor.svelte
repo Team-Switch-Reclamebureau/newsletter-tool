@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createItem, moveNewsletterItem, type Newsletter } from './newsletters';
-	import { DEFAULT_ITEM_SNIPPET, type ImageAsset, type ImageScope } from './remote';
+	import { DEFAULT_ITEM_SNIPPET, type ImageAsset } from './remote';
 	import TemplateFields from './TemplateFields.svelte';
 	import { templateFields } from './template-fields';
 
@@ -12,7 +12,7 @@
 		assets?: ImageAsset[];
 		imageUploading?: boolean;
 		canUploadEditionImages?: boolean;
-		onImageUpload?: (newsletterId: string, itemId: string, fieldName: string, file: File, scope: ImageScope) => Promise<void>;
+		onImageUpload?: (newsletterId: string, itemId: string, fieldName: string, file: File) => Promise<void>;
 	} = $props();
 	const newsletterSchema = $derived(templateFields(template, 'template'));
 	const itemSchema = $derived(templateFields(snippet ?? DEFAULT_ITEM_SNIPPET, 'item'));
@@ -26,9 +26,9 @@
 			? { ...item, fields: { ...item.fields, [name]: value } } : item) });
 	}
 
-	function uploadItemImage(itemId: string, name: string, file: File, scope: ImageScope) {
+	function uploadItemImage(itemId: string, name: string, file: File) {
 		if (!onImageUpload) throw new Error('Image uploads are not available.');
-		return onImageUpload(newsletter.id, itemId, name, file, scope);
+		return onImageUpload(newsletter.id, itemId, name, file);
 	}
 
 </script>
@@ -47,7 +47,7 @@
 				<button aria-label={`Move item ${index + 1} down`} disabled={index === newsletter.items.length - 1} onclick={() => onUpdate(moveNewsletterItem(newsletter, item.id, 1))}>↓</button>
 				<button class="remove" aria-label={`Remove item ${index + 1}`} onclick={() => onUpdate({ ...newsletter, items: newsletter.items.filter((entry) => entry.id !== item.id) })}>Remove</button>
 			</div></div>
-			<TemplateFields fields={itemSchema.fields} values={item.fields} prefix={item.id} {assets} {imageUploading} {canUploadEditionImages} onUpdate={(name, value) => updateField(item.id, name, value)} onImageUpload={onImageUpload ? (name, file, scope) => uploadItemImage(item.id, name, file, scope) : undefined} />
+			<TemplateFields fields={itemSchema.fields} values={item.fields} prefix={item.id} {assets} {imageUploading} {canUploadEditionImages} onUpdate={(name, value) => updateField(item.id, name, value)} onImageUpload={onImageUpload ? (name, file) => uploadItemImage(item.id, name, file) : undefined} />
 		</section>
 	{/each}
 </div>

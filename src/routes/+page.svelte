@@ -12,7 +12,7 @@
 	import { cloneNewsletter, composeNewsletter, createItem, createNewsletter, parseNewsletter, serializeNewsletter, type Newsletter } from '#lib/newsletters.js';
 	import { readSource } from '#lib/files.js';
 	import { uploadImages, type ImageUploadResult } from '#lib/image-uploads.js';
-	import { DEFAULT_ITEM_SNIPPET, MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ImageScope, type ProjectMember, type RemoteProject } from '#lib/remote.js';
+	import { DEFAULT_ITEM_SNIPPET, MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ProjectMember, type RemoteProject } from '#lib/remote.js';
 	import { templateFields } from '#lib/template-fields.js';
 	import type { EditorLayout, UserPreferences } from '#lib/user-preferences.js';
 	import { EMPTY_UTM, UTM_KEYS } from '#lib/utm.js';
@@ -102,7 +102,7 @@
 		}
 		return ids;
 	});
-	const composition = $derived(context ? composeNewsletter(context.template, context.snippet || null, editionView ? draft?.newsletter ?? null : null) : { source: '', error: null });
+	const composition = $derived(context ? composeNewsletter(context.template, context.snippet || null, editionView ? draft?.newsletter ?? null : null, undefined, true) : { source: '', error: null });
 	const dirty = $derived(draft ? serializeNewsletter(draft.newsletter) !== draft.snapshot : false);
 	const templateDirty = $derived(context ? templateSnapshot(context) !== context.projectSnapshot : false);
 	const recipientsDirty = $derived(context ? testRecipientsDirty(context) : false);
@@ -370,7 +370,7 @@
 		return result.asset;
 	}
 
-	async function uploadImage(current: ProjectContext, file: File, edition?: Draft): Promise<ImageAsset> {
+	async function uploadImage(current: ProjectContext, file: File, edition: Draft): Promise<ImageAsset> {
 		if (current.uploading || current.deletingAssetId || current.deletingEditionId) throw new Error('An image or edition operation is already in progress. Please wait.');
 		current.uploading = true;
 		current.libraryUploadTotal = 0;
@@ -381,14 +381,15 @@
 		} finally { current.uploading = false; }
 	}
 
-	async function uploadItemImage(newsletterId: string, itemId: string, fieldName: string, file: File, scope: ImageScope) {
+	async function uploadItemImage(newsletterId: string, itemId: string, fieldName: string, file: File) {
 		const current = context;
 		if (!current) throw new Error('Choose a project first.');
 		const entry = current.drafts.find((entry) => entry.newsletter.id === newsletterId);
-		if (scope === 'edition' && !entry?.revision) throw new Error('Save this campaign before uploading campaign images.');
-		const asset = await uploadImage(current, file, scope === 'edition' ? entry : undefined);
-		if (!entry?.newsletter.items.some((item) => item.id === itemId)) {
-			toasts.success('Image uploaded to the library. The original item no longer exists.');
+		if (!entry) throw new Error('The selected campaign no longer exists.');
+		if (!entry.revision) throw new Error('Save this campaign before uploading campaign images.');
+		const asset = await uploadImage(current, file, entry);
+		if (!entry.newsletter.items.some((item) => item.id === itemId)) {
+			toasts.success('Image uploaded to campaign images. The original item no longer exists.');
 			return;
 		}
 		entry.newsletter.items = entry.newsletter.items.map((item) => item.id === itemId ? { ...item, fields: { ...item.fields, [fieldName]: asset.url } } : item);
@@ -860,7 +861,7 @@
 							<button class="secondary delete-image" aria-label={`Delete image ${asset.filename}`} disabled={context.uploading || context.deletingAssetId !== null || imageUsedInDrafts(asset) || (asset.scope === 'edition' && !draft?.revision)} onclick={() => deleteLibraryImage(asset)}>{context.deletingAssetId === asset.id ? 'Deleting…' : 'Delete image'}</button>
 							{#if imageUsedInDrafts(asset)}<small>Used in campaign content or a template. Remove references and save first.</small>{/if}
 						</article>{/each}</div>
-						{#if !libraryAssets.length}<p>No images in this library yet. Upload them here or directly from an item.</p>{/if}
+						{#if !libraryAssets.length}<p>{editionView ? 'No images in this library yet. Upload them here or directly from an item.' : 'No project images yet. Upload them here to share them across campaigns.'}</p>{/if}
 					</section>
 				{:else if mode === 'content' && draft}
 					{#key draft.newsletter.id}

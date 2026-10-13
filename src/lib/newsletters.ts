@@ -1,7 +1,7 @@
 import { DEFAULT_ITEM_SNIPPET, MAX_TEMPLATE_BYTES } from './remote';
 import { fieldError, fieldValue, templateFields, validFieldValues, validHttpUrl, type FieldValues } from './template-fields';
 import { EMPTY_UTM, parseUtm, type UtmSettings } from './utm';
-import { markPreviewFields, type PreviewField } from './preview-fields';
+import { EMPTY_IMAGE_PLACEHOLDER, markPreviewFields, type PreviewField } from './preview-fields';
 import { escapeMarkup, renderRichText } from './rich-text';
 export { validHttpUrl } from './template-fields';
 
@@ -104,9 +104,9 @@ export function parseNewsletter(contents: string): Newsletter {
 	return newsletter;
 }
 
-export function defaultItemSnippet(item: NewsletterItem): string {
+export function defaultItemSnippet(item: NewsletterItem, showImagePlaceholder = false): string {
 	let source = DEFAULT_ITEM_SNIPPET;
-	if (!fieldValue(item.fields, 'image')) source = source.replace(/<mj-image\b[^>]*\/>/, '');
+	if (!showImagePlaceholder && !fieldValue(item.fields, 'image')) source = source.replace(/<mj-image\b[^>]*\/>/, '');
 	if (!fieldValue(item.fields, 'button') || !fieldValue(item.fields, 'url')) source = source.replace(/<mj-button\b[^>]*>[\s\S]*?<\/mj-button>/, '');
 	return source;
 }
@@ -127,11 +127,15 @@ export function templateValuesError(template: string, snippet: string | null, ne
 	return null;
 }
 
-export function composeNewsletter(template: string, snippet: string | null, newsletter: Newsletter | null, previewFields?: PreviewField[]): { source: string; error: string | null } {
+export function composeNewsletter(template: string, snippet: string | null, newsletter: Newsletter | null, previewFields?: PreviewField[], showImagePlaceholders = false): { source: string; error: string | null } {
 	const fail = (error: string) => ({ source: '', error });
 	if (!template) return { source: '', error: null };
 	const fieldsError = templateValuesError(template, snippet, newsletter);
 	if (fieldsError) return fail(fieldsError);
+	function renderField(type: string, value: string) {
+		if (showImagePlaceholders && type === 'image' && !value) return escapeMarkup(EMPTY_IMAGE_PLACEHOLDER);
+		return type === 'textarea' ? renderRichText(value) : escapeMarkup(value);
+	}
 	if (newsletter) {
 		const message = newsletterError(newsletter);
 		if (message) return fail(message);
@@ -145,14 +149,13 @@ export function composeNewsletter(template: string, snippet: string | null, news
 	}
 	let itemMarkup = '';
 	for (const item of newsletter?.items ?? []) {
-		const itemSource = snippet ?? defaultItemSnippet(item);
+		const itemSource = snippet ?? defaultItemSnippet(item, showImagePlaceholders);
 		itemMarkup += (previewFields ? markPreviewFields(itemSource, previewFields, item.id) : itemSource).replace(/<!--[\s\S]*?-->|{{\s*([^{}]*?)\s*}}/g, (match: string, tag: string | undefined) => {
 			if (tag === undefined) return match;
 			const key = tag.trim();
 			if (key.includes(':')) {
 				const [type, name] = key.split(':').map((part) => part.trim());
-				const value = fieldValue(item.fields, name);
-				return type === 'textarea' ? renderRichText(value) : escapeMarkup(value);
+				return renderField(type, fieldValue(item.fields, name));
 			}
 			return '';
 		}) + '\n';
@@ -163,8 +166,7 @@ export function composeNewsletter(template: string, snippet: string | null, news
 		const key = tag.trim();
 		if (key.includes(':')) {
 			const [type, name] = key.split(':').map((part) => part.trim());
-			const value = fieldValue(newsletter?.fields, name);
-			return type === 'textarea' ? renderRichText(value) : escapeMarkup(value);
+			return renderField(type, fieldValue(newsletter?.fields, name));
 		}
 		if (key === 'items') return itemMarkup;
 		if (key === 'newsletter_name') return escapeMarkup(newsletter?.name ?? '');

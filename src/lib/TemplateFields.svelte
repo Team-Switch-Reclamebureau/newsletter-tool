@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fieldValue, type FieldValues, type TemplateField } from './template-fields';
-	import type { ImageAsset, ImageScope } from './remote';
+	import type { ImageAsset } from './remote';
 	import RichTextEditor from './RichTextEditor.svelte';
 
 	let { fields, values, prefix, assets = [], onUpdate, onImageUpload, imageUploading = false, canUploadEditionImages = false }: {
@@ -9,11 +9,10 @@
 		prefix: string;
 		assets?: ImageAsset[];
 		onUpdate: (name: string, value: string) => void;
-		onImageUpload?: (name: string, file: File, scope: ImageScope) => Promise<void>;
+		onImageUpload?: (name: string, file: File) => Promise<void>;
 		imageUploading?: boolean;
 		canUploadEditionImages?: boolean;
 	} = $props();
-	let uploadScope = $state<ImageScope>('project');
 	let uploading = $state<string | null>(null);
 	let uploadError = $state('');
 
@@ -22,18 +21,17 @@
 		if (!file || !onImageUpload) return;
 		uploadError = '';
 		uploading = name;
-		try { await onImageUpload(name, file, uploadScope); }
+		try {
+			if (!canUploadEditionImages) throw new Error('Save this campaign before uploading campaign images.');
+			await onImageUpload(name, file);
+		}
 		catch (cause) { uploadError = cause instanceof Error ? cause.message : 'The image could not be uploaded.'; }
 		finally { uploading = null; input.value = ''; }
 	}
 </script>
 
-{#if onImageUpload && fields.some((field) => field.type === 'image')}
-	<label for={`${prefix}-upload-scope`}>Upload new images to</label>
-	<select id={`${prefix}-upload-scope`} bind:value={uploadScope} disabled={imageUploading || uploading !== null}>
-		<option value="project">Project (available in every campaign)</option>
-		<option value="edition" disabled={!canUploadEditionImages}>This campaign{canUploadEditionImages ? '' : ' (save first)'}</option>
-	</select>
+{#if onImageUpload && !canUploadEditionImages && fields.some((field) => field.type === 'image')}
+	<p class="image-hint">Save this campaign before uploading campaign images.</p>
 {/if}
 {#if uploadError}<p class="upload-error" role="alert">{uploadError}</p>{/if}
 {#each fields as field (field.name)}
@@ -54,11 +52,11 @@
 			{/each}
 		</select>
 		{#if !assets.length}
-			<p class="image-hint" id={`${prefix}-field-${field.name}-hint`}>Upload an image in the Images tab to select it here, or enter an image URL above.</p>
+			<p class="image-hint" id={`${prefix}-field-${field.name}-hint`}>Upload an image in the Campaign images tab to select it here, or enter an image URL above.</p>
 		{/if}
 		{#if onImageUpload}
 			<label for={`${prefix}-field-${field.name}-upload`}>{uploading === field.name ? 'Uploading image...' : `Upload an image for ${field.name.replace(/[_-]/g, ' ')}`}</label>
-			<input id={`${prefix}-field-${field.name}-upload`} type="file" accept="image/jpeg,image/png,image/webp" disabled={imageUploading || uploading !== null || (uploadScope === 'edition' && !canUploadEditionImages)} onchange={(event) => uploadImage(field.name, event.currentTarget)} />
+			<input id={`${prefix}-field-${field.name}-upload`} type="file" accept="image/jpeg,image/png,image/webp" disabled={imageUploading || uploading !== null || !canUploadEditionImages} onchange={(event) => uploadImage(field.name, event.currentTarget)} />
 		{/if}
 	{/if}
 {/each}

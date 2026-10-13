@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from 'parse5';
 import { composeNewsletter, createItem, createNewsletter, serializeNewsletter } from './newsletters';
-import { markPreviewFields, previewFields, previewFieldValue, previewItemClass, updatePreviewField } from './preview-fields';
+import { EMPTY_IMAGE_PLACEHOLDER, markPreviewFields, previewFields, previewFieldValue, previewItemClass, updatePreviewField } from './preview-fields';
 import { renderTemplate } from './server/render';
 
 const template = '<mjml><mj-body><mj-section><mj-column><mj-text>{{newsletter_name}} / {{text:heading}}</mj-text></mj-column></mj-section>{{items}}</mj-body></mjml>';
@@ -18,6 +18,65 @@ function fixture() {
 }
 
 describe('editable preview fields', () => {
+	it('renders a crossed placeholder and editable image target for an empty default item without changing exports or storage', async () => {
+		const newsletter = createNewsletter('Empty image');
+		newsletter.items = [createItem()];
+		const snapshot = serializeNewsletter(newsletter);
+		const fields = previewFields(template, null, newsletter);
+		const image = fields.find((field) => field.type === 'image')!;
+		const composed = composeNewsletter(template, null, newsletter, fields, true);
+		expect(composed.error).toBeNull();
+		expect(composed.source).toContain(EMPTY_IMAGE_PLACEHOLDER);
+		const rendered = await renderTemplate(composed.source);
+		expect(rendered.errors).toEqual([]);
+		expect(rendered.html).toContain(`src="${EMPTY_IMAGE_PLACEHOLDER}"`);
+		expect(rendered.html).toContain(image.id);
+		expect(previewFieldValue(newsletter, image)).toBe('');
+		expect(serializeNewsletter(newsletter)).toBe(snapshot);
+		const exported = await renderTemplate(composeNewsletter(template, null, newsletter).source);
+		expect(exported.html).not.toContain(EMPTY_IMAGE_PLACEHOLDER);
+		expect(exported.html).not.toContain('<img');
+	});
+
+	it('shows placeholders in Split preview without introducing inline editing markers', async () => {
+		const newsletter = createNewsletter('Split preview');
+		newsletter.items = [createItem()];
+		const rendered = await renderTemplate(composeNewsletter(template, null, newsletter, undefined, true).source);
+		expect(rendered.errors).toEqual([]);
+		expect(rendered.html).toContain(EMPTY_IMAGE_PLACEHOLDER);
+		expect(rendered.html).not.toContain('newsletter-field-');
+	});
+
+	it('handles custom campaign/item images, linked images, raw HTML, and background images independently', async () => {
+		const main = template.replace('{{items}}', '<mj-section><mj-column><mj-image src="{{image:hero}}" /></mj-column></mj-section>{{items}}');
+		const custom = '<mj-section background-url="{{image:background}}"><mj-column><mj-image width="180px" height="90px" src="{{image:photo}}" href="{{url:target}}" /><mj-text><img src="{{image:inline}}" width="120" /></mj-text></mj-column></mj-section>';
+		const newsletter = createNewsletter('Custom images');
+		newsletter.items = [{ ...createItem(), fields: { target: 'https://example.com/story' } }];
+		const fields = previewFields(main, custom, newsletter);
+		const composed = composeNewsletter(main, custom, newsletter, fields, true);
+		expect(composed.error).toBeNull();
+		expect(composed.source.split(EMPTY_IMAGE_PLACEHOLDER)).toHaveLength(5);
+		const rendered = await renderTemplate(composed.source);
+		expect(rendered.errors).toEqual([]);
+		expect(rendered.html).toContain('href="https://example.com/story"');
+		expect(rendered.html).toContain(`background="${EMPTY_IMAGE_PLACEHOLDER}"`);
+		expect(rendered.html).toContain('width="180"');
+		expect(composeNewsletter(main, custom, newsletter).source).not.toContain(EMPTY_IMAGE_PLACEHOLDER);
+	});
+
+	it('replaces the placeholder after selecting an image and restores it when clearing the image', () => {
+		const newsletter = createNewsletter('Choose an image');
+		newsletter.items = [createItem()];
+		const fields = previewFields(template, null, newsletter);
+		const image = fields.find((field) => field.type === 'image')!;
+		const selected = updatePreviewField(newsletter, image, 'https://example.com/chosen.webp');
+		const composed = composeNewsletter(template, null, selected, fields, true);
+		expect(composed.source).toContain('https://example.com/chosen.webp');
+		expect(composed.source).not.toContain(EMPTY_IMAGE_PLACEHOLDER);
+		expect(composeNewsletter(template, null, updatePreviewField(selected, image, ''), fields, true).source).toContain(EMPTY_IMAGE_PLACEHOLDER);
+		expect(composeNewsletter(template, null, updatePreviewField(selected, image, 'javascript:alert(1)'), fields, true).error).toContain('http://');
+	});
+
 	it('keeps both image and destination URL markers on linked images', async () => {
 		const { newsletter } = fixture();
 		const linked = '<mj-section><mj-column><mj-image src="{{image:image}}" href="{{url:url}}" /></mj-column></mj-section>';
