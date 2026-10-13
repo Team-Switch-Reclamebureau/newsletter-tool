@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { createNewsletter, createItem, type Newsletter } from '../../src/lib/newsletters';
 import type { ImageAsset, RemoteProject } from '../../src/lib/remote';
+import { version as appVersion } from '../../package.json';
 import { startHostedFixture } from '../helpers/hosted-fixture';
 
 let fixture: Awaited<ReturnType<typeof startHostedFixture>>;
@@ -59,6 +60,13 @@ beforeAll(async () => {
 afterAll(async () => { if (fixture) await fixture.stop(); });
 
 describe('project settings and deletion', () => {
+	it('shows the current package version in the workspace footer', async () => {
+		const response = await request('/');
+		expect(response.status).toBe(200);
+		const footer = (await response.text()).match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/)?.[1];
+		expect(footer?.replace(/<!--[\s\S]*?-->/g, '')).toBe(`Team Switch © 2026 · v${appVersion}`);
+	});
+
 	it('allows members to rename independently of templates and recipients, validating access and revisions', async () => {
 		const saved = await project();
 		await share(saved.id);

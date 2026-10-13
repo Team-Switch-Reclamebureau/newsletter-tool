@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import type { PageData } from './$types';
+	import { version as appVersion } from '../../package.json';
 	import ContentEditor from '#lib/ContentEditor.svelte';
 	import UserMenu from '#lib/UserMenu.svelte';
 	import WorkspaceSidebar from '#lib/WorkspaceSidebar.svelte';
@@ -697,7 +698,7 @@
 					<nav class="breadcrumb" aria-label="Breadcrumb">
 						<ol>
 							<li aria-current={editionView && draft ? undefined : 'page'}>
-								{#if selected}<button class="project-link" title={selected.name} onclick={() => mode = 'editions'}>{selected.name}</button>
+								{#if selected}<button class="project-link" title={selected.name} onclick={() => mode = context?.project.deletionPending ? 'project-settings' : 'editions'}>{selected.name}</button>
 								{:else}<span class="crumb-name">Getting started</span>{/if}
 							</li>
 							{#if editionView && draft}<li aria-current="page"><span class="crumb-name" title={draft.newsletter.name || 'Untitled campaign'}>{draft.newsletter.name || 'Untitled campaign'}</span></li>{/if}
@@ -884,7 +885,7 @@
 				{/if}
 				</fieldset>
 			{/if}
-			<footer>Team Switch © 2026</footer>
+			<footer>Team Switch © 2026 · v{appVersion}</footer>
 		</main>
 	</div>
 {/if}

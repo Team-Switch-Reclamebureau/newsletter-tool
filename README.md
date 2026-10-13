@@ -156,6 +156,7 @@ The old address remains the sign-in address until verification succeeds.
 Email changes fail explicitly if SMTP delivery fails or the address is already in use.
 Project and campaign view tabs pair text labels with consistent outline icons;
 icons are decorative, so accessible names and keyboard behavior remain unchanged.
+The workspace footer shows the app version from `package.json`.
 On screens up to 1100px wide, navigation starts collapsed behind **Menu** in the
 workspace header. The drawer includes projects and account actions; selecting a
 project or starting a new project closes it. Use its close button, Escape, or
