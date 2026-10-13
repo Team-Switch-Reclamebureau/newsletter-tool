@@ -38,6 +38,11 @@
 		if (!window.confirm(`${user.isAdmin ? 'Revoke' : 'Grant'} administrator access for ${user.email}? Administrators can manage users, roles, and SMTP credentials.`)) return;
 		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'PATCH', { isAdmin: !user.isAdmin }, 'Administrator access updated.');
 	}
+
+	function removeUser(user: AdminUser) {
+		if (!window.confirm(`Permanently delete the account for ${user.name} (${user.email})? All sessions and project access will be revoked. Any projects they own will transfer to you. Existing campaigns, templates, and images will be kept. This cannot be undone.`)) return;
+		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'DELETE', {}, 'User deleted. Owned projects were transferred to you; existing content was preserved.');
+	}
 </script>
 
 <p>Invite users to choose their own password. Project access is granted separately from each project's Sharing tab.</p>
@@ -57,7 +62,10 @@
 			<span>{user.isAdmin ? 'Administrator' : 'User'} · {user.invitedAt ? (user.sentAt ? 'Invitation pending' : 'Invitation not sent') : 'Active'}</span>
 			<div class="actions">
 				{#if user.invitedAt}<button class="secondary" disabled={busy} onclick={() => action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'POST', {}, 'Invitation resent. The link expires in one hour.')}>Resend invitation</button>{/if}
-				{#if user.id !== currentUserId}<button class="secondary" disabled={busy} onclick={() => role(user)}>{user.isAdmin ? 'Revoke admin access' : 'Make administrator'}</button>{/if}
+				{#if user.id !== currentUserId}
+					<button class="secondary" disabled={busy} onclick={() => role(user)}>{user.isAdmin ? 'Revoke admin access' : 'Make administrator'}</button>
+					<button class="destructive" aria-label={`Delete user ${user.email}`} disabled={busy} onclick={() => removeUser(user)}>Delete user</button>
+				{/if}
 			</div>
 		</li>
 	{/each}
@@ -70,6 +78,7 @@
 	p, span { font-size: 12px; line-height: 1.8; color: var(--ui-muted, #78886b); }
 	button { font: inherit; font-size: 12px; border: 0; padding: 11px 16px; border-radius: 5px; cursor: pointer; background: var(--ui-primary, #425f30); color: var(--ui-on-primary, white); margin-top: 12px; }
 	.secondary { background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); border: 1px solid var(--ui-border, #d3ddc8); }
+	.destructive { background: #fff2ec; color: #9b4335; border: 1px solid #eed2c6; }
 	button:disabled { opacity: .55; cursor: default; }
 	ul { list-style: none; margin: 20px 0 0; padding: 0; }
 	li { border-top: 1px solid var(--ui-border, #d3ddc8); padding: 16px 0; overflow-wrap: anywhere; }

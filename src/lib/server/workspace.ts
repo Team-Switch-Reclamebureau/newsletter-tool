@@ -31,9 +31,14 @@ export async function listProjects(database: Database, userId: string) {
 }
 
 export async function requireProject(database: Database, projectId: string, userId: string, lock = false) {
+	if (lock) {
+		// Match account-deletion lock order, then recheck membership after waiting for the project.
+		if (!(await database.query('SELECT id FROM "user" WHERE id = $1 FOR KEY SHARE', [userId])).rowCount) error(401, 'Sign in to access this workspace.');
+		await database.query('SELECT id FROM projects WHERE id = $1 FOR NO KEY UPDATE', [projectId]);
+	}
 	const result = await database.query<ProjectRow>(`
 		SELECT p.*, m.role FROM projects p JOIN project_members m ON m.project_id = p.id
-		WHERE p.id = $1 AND m.user_id = $2 ${lock ? 'FOR UPDATE OF p' : ''}`, [projectId, userId]);
+		WHERE p.id = $1 AND m.user_id = $2`, [projectId, userId]);
 	if (!result.rows[0]) error(404, 'Project not found or access was not granted.');
 	return projectFromRow(result.rows[0]);
 }

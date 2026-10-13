@@ -153,8 +153,9 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 	const linkLabel = document.createElement('label');
 	linkLabel.textContent = 'Link URL';
 	const linkInput = document.createElement('input');
-	linkInput.type = 'url';
-	linkInput.placeholder = 'https://example.com';
+	linkInput.type = 'text';
+	linkInput.inputMode = 'url';
+	linkInput.placeholder = 'https://example.com or *|UNSUB|*';
 	linkLabel.append(linkInput);
 	const linkError = document.createElement('p');
 	linkError.className = 'newsletter-rich-link-error';
@@ -199,7 +200,7 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 	function applyLink() {
 		const href = linkInput.value.trim();
 		if (!validRichTextLink(href)) {
-			linkError.textContent = 'Use http://, https://, mailto:, or tel: with a destination. Web URLs cannot contain embedded credentials.';
+			linkError.textContent = 'Use http://, https://, mailto:, or tel: with a destination, or *|UNSUB|*. Web URLs cannot contain embedded credentials.';
 			linkError.hidden = false;
 			linkInput.focus();
 			return;

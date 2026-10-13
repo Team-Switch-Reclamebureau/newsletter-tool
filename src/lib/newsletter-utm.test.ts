@@ -13,10 +13,12 @@ describe('edition UTM persistence', () => {
 		const href = 'https://example.test/story?existing=1&existing=2&utm_source=old&utm_content=keep#section';
 		const email = 'mailto:team@example.test?subject=Hello%20there';
 		const telephone = 'tel:+31201234567';
+		const unsubscribe = '*|UNSUB|*';
 		const value = encodeRichText({ type: 'doc', content: [{ type: 'paragraph', content: [
 			{ type: 'text', text: 'Read more', marks: [{ type: 'bold' }, { type: 'link', attrs: { href } }] },
 			{ type: 'text', text: 'Email', marks: [{ type: 'link', attrs: { href: email } }] },
-			{ type: 'text', text: 'Call', marks: [{ type: 'link', attrs: { href: telephone } }] }
+			{ type: 'text', text: 'Call', marks: [{ type: 'link', attrs: { href: telephone } }] },
+			{ type: 'text', text: 'Unsubscribe', marks: [{ type: 'link', attrs: { href: unsubscribe } }] }
 		] }] });
 		newsletter.fields = { introduction: value };
 		newsletter.items = [{ ...createItem(), fields: { body: value } }];
@@ -39,9 +41,10 @@ describe('edition UTM persistence', () => {
 			if ('childNodes' in node) for (const child of node.childNodes) visit(child);
 		}
 		visit(tree);
-		expect(links).toHaveLength(6);
+		expect(links).toHaveLength(8);
 		expect(links.filter((href) => href === email)).toHaveLength(2);
 		expect(links.filter((href) => href === telephone)).toHaveLength(2);
+		expect(links.filter((href) => href === unsubscribe)).toHaveLength(2);
 		for (const value of links.filter((href) => href.startsWith('https://'))) {
 			const url = new URL(value);
 			expect(url.searchParams.getAll('existing')).toEqual(['1', '2']);

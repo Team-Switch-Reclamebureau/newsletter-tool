@@ -24,6 +24,7 @@ function keys(value: Record<string, unknown>, allowed: string[]): boolean {
 
 export function validRichTextLink(value: unknown): value is string {
 	if (typeof value !== 'string' || value !== value.trim() || /[\u0000-\u001f\u007f]/.test(value)) return false;
+	if (value === '*|UNSUB|*') return true;
 	if (/^https?:\/\//i.test(value)) return validHttpUrl(value);
 	if (!/^(mailto|tel):/i.test(value)) return false;
 	const destination = value.slice(value.indexOf(':') + 1).split(/[?#]/, 1)[0];
@@ -68,12 +69,12 @@ export function richTextDocument(value: string): RichTextDocument {
 	let document: unknown;
 	try { document = JSON.parse(value.slice(RICH_TEXT_PREFIX.length)); }
 	catch (cause) { throw new Error('Invalid formatted text: the saved document is not valid JSON.', { cause }); }
-	if (!validDocument(document)) throw new Error('Invalid formatted text: only paragraphs, line breaks, bold, italic, and safe HTTP(S), mailto, or tel links are supported.');
+	if (!validDocument(document)) throw new Error('Invalid formatted text: only paragraphs, line breaks, bold, italic, and safe HTTP(S), mailto, tel, or *|UNSUB|* links are supported.');
 	return document;
 }
 
 export function encodeRichText(document: unknown): string {
-	if (!validDocument(document)) throw new Error('Invalid formatted text: only paragraphs, line breaks, bold, italic, and safe HTTP(S), mailto, or tel links are supported.');
+	if (!validDocument(document)) throw new Error('Invalid formatted text: only paragraphs, line breaks, bold, italic, and safe HTTP(S), mailto, tel, or *|UNSUB|* links are supported.');
 	return RICH_TEXT_PREFIX + JSON.stringify(document);
 }
 

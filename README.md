@@ -11,7 +11,10 @@ Any project member can share a project with other provisioned accounts as editor
 from the project's **Sharing** tab. Access covers all campaigns, templates, and
 images in the project; newly added editors can also share it with others.
 The Sharing tab lists everyone with access by name, email, and project role,
-including the owner. The list updates after adding a member; use **Refresh members**
+including the owner. Only project owners can **Remove member** for editors;
+owners cannot be removed. Removing project access leaves the person's account,
+other project access, and existing campaigns and images intact.
+The list updates after adding or removing a member; use **Refresh members**
 to check for access granted by others.
 The server checks project membership for every project operation. Public
 registration is blocked; administrators invite users from Admin settings or
@@ -85,13 +88,14 @@ The campaign **Content** tab offers two editor layouts:
 Both layouts edit the same unsaved draft. Regular text fields remain plain text.
 Textarea fields use a minimal Tiptap editor with **Bold**, **Italic**, **Link**,
 **Undo**, and **Redo**. Select text and use **Link** to add or edit an absolute
-HTTP(S), `mailto:`, or `tel:` URL; **Remove link** keeps the text without its link. With no selection,
+HTTP(S), `mailto:`, or `tel:` URL, or Mailchimp's exact `*|UNSUB|*` unsubscribe
+merge tag; **Remove link** keeps the text without its link. With no selection,
 adding a link inserts its URL as linked text. Invalid URLs are shown explicitly.
 In Dynamic mode the formatting toolbar appears when the field is
 focused; in Split mode it stays above the editor. Cmd/Ctrl+B and Cmd/Ctrl+I toggle
 formatting, Cmd/Ctrl+K opens the link editor, and the editor supports normal
 undo/redo shortcuts. Paste strips unsupported content and attributes; only text,
-bold, italic, safe HTTP(S)/email/telephone links, and line breaks are
+bold, italic, safe HTTP(S)/email/telephone links, `*|UNSUB|*` links, and line breaks are
 kept. Existing plain-text values, including literal HTML-looking text, remain
 literal until explicitly formatted.
 
@@ -102,7 +106,10 @@ composition escapes text and emits only `<strong>`, `<em>`, `<br />`, and
 `<a href="...">`; it never inserts arbitrary editor HTML. Text links pass through
 the same campaign UTM tracking as buttons in previews, saved HTML exports, and
 test emails, preserving other query parameters and fragments. `mailto:` and
-`tel:` destinations are never modified with UTM parameters. Existing resource
+`tel:` destinations and `*|UNSUB|*` are never modified with UTM parameters.
+The unsubscribe merge tag is preserved literally for Mailchimp to resolve when
+sending; it is not expanded by this app. Other merge-tag destinations are not supported.
+Existing resource
 link exclusions still apply. Stored link URLs stay unchanged, so changing campaign
 UTM settings does not require re-editing the text. Campaign JSON exports preserve formatting.
 The preview refreshes after leaving an inline text field so typing does not
@@ -516,6 +523,18 @@ Grant/revoke administrator access separately from project membership.
 Administrators cannot change their own role in the UI; another administrator
 or the recovery CLI must do that. Role changes apply on subsequent requests.
 
+Administrators can permanently **Delete user** after confirming the action.
+They cannot delete their own account. All projects owned by the deleted user
+transfer to the administrator performing the deletion, including projects where
+that administrator was already an editor. Other memberships, credentials,
+sessions, pending invitations, preferences, and password reset links are removed.
+Projects, templates, campaigns, images, publication snapshots, and public export
+and image URLs remain intact. Historical creator references become empty rather
+than being attributed to the new owner. Account deletion cannot be undone.
+Migration `014-user-removal.sql` enables content-preserving deletion; deployments
+run it automatically. For local development, run `npm run db:migrate` before
+using account deletion.
+
 Users can select **Forgot your password?** on the sign-in screen or **Change
 password** in the workspace sidebar. Passwords must contain 12–128 characters.
 Password recovery responses do not disclose whether an address has an account.
@@ -677,7 +696,7 @@ and `number`. Image fields also offer the project's uploaded image library;
 upload new images in the **Images** tab. URL/image values must be absolute HTTP(S)
 URLs and numbers must be finite. All dynamic fields are optional; empty values
 render as empty strings. Text is escaped; formatted textarea values emit only
-`<strong>`, `<em>`, `<br />`, and safe HTTP(S)/email/telephone anchors. User input is never interpreted as more placeholders.
+`<strong>`, `<em>`, `<br />`, and safe HTTP(S)/email/telephone or `*|UNSUB|*` anchors. User input is never interpreted as more placeholders.
 
 For example, `<mj-image src="{{ image:hero_image }}" />` creates an image URL
 input and an **Uploaded image for hero image** picker. Selecting an uploaded

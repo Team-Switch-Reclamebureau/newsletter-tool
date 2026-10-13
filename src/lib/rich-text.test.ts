@@ -73,6 +73,20 @@ describe('formatted textarea storage and rendering', () => {
 		}
 	});
 
+	it('preserves the exact Mailchimp unsubscribe merge tag in link storage and output', () => {
+		const href = '*|UNSUB|*';
+		expect(validRichTextLink(href)).toBe(true);
+		const value = encodeRichText({ type: 'doc', content: [{ type: 'paragraph', content: [
+			{ type: 'text', text: 'Unsubscribe', marks: [{ type: 'link', attrs: { href } }] }
+		] }] });
+		expect(richTextDocument(value).content[0].content?.[0]).toMatchObject({ marks: [{ type: 'link', attrs: { href } }] });
+		expect(renderRichText(value)).toBe('<a href="*|UNSUB|*">Unsubscribe</a>');
+		expect(fieldError({ name: 'body', type: 'textarea' }, value)).toBeNull();
+		for (const invalid of ['*|UNSUB|*?utm_source=mail', '*|UNSUB|*#anchor', '*|UPDATE_PROFILE|*', '*|unsub|*', '%2A%7CUNSUB%7C%2A', ' *|UNSUB|*']) {
+			expect(validRichTextLink(invalid)).toBe(false);
+		}
+	});
+
 	it('rejects malformed encoded content explicitly rather than treating it as plain text', () => {
 		expect(() => richTextDocument(RICH_TEXT_PREFIX + '{')).toThrow('not valid JSON');
 		expect(fieldError({ name: 'body', type: 'textarea' }, RICH_TEXT_PREFIX + '{}')).toContain('Field "body": Invalid formatted text');

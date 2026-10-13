@@ -96,7 +96,7 @@ export async function startHostedFixture() {
 			await delay(250);
 		}
 		if (!ready) throw new Error(`The test application did not become healthy: ${appLogs.join('\n')}`);
-		return { origin: config.origin, password, pool, stop, directory, appLogs };
+		return { origin: config.origin, password, pool, auth, stop, directory, appLogs };
 	} catch (cause) {
 		await stop();
 		throw new Error(`Could not start the PostgreSQL integration fixture: ${cause instanceof Error ? cause.message : String(cause)}\n${databaseLogs.slice(-15).join('\n')}`);

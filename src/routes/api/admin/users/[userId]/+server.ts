@@ -1,7 +1,15 @@
 import { error, json } from '@sveltejs/kit';
-import { readAdminUsers } from '#lib/server/admin-users.js';
+import { deleteAdminUser, readAdminUsers } from '#lib/server/admin-users.js';
 import { api, rateLimit, readJson, requireAdmin } from '#lib/server/http.js';
 import { sendPasswordLink } from '#lib/server/account-email.js';
+
+export const DELETE = api(async (event) => {
+	const { pool, user } = requireAdmin(event);
+	const id = event.params.userId;
+	if (!id) error(400, 'A user id is required.');
+	const transferredProjects = await deleteAdminUser(pool, user.id, id);
+	return json({ users: await readAdminUsers(pool), transferredProjects });
+});
 
 export const PATCH = api(async (event) => {
 	const { pool, user } = requireAdmin(event);

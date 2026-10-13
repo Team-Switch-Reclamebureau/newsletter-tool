@@ -33,7 +33,7 @@
 	.toaster { position: fixed; z-index: 1000; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); width: min(420px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); overflow-y: auto; pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 	.stack { display: grid; gap: 10px; }
 	.stack + .stack:not(:empty) { margin-top: 10px; }
-	.toast { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #526348); box-shadow: 0 8px 32px #25382d24; pointer-events: auto; }
+	.toast { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #526348); pointer-events: auto; }
 	.status-icon { flex-shrink: 0; width: 20px; height: 20px; color: var(--ui-accent, #425f30); }
 	p { flex: 1; min-width: 0; margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 	button { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; margin: -4px -4px 0 0; padding: 4px; border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }

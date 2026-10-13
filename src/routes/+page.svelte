@@ -40,6 +40,7 @@
 		members: ProjectMember[] | null;
 		membersLoading: boolean;
 		addingMember: boolean;
+		removingMemberId: string | null;
 		templateSaving: boolean;
 		uploading: boolean;
 		libraryUploadTotal: number;
@@ -172,7 +173,7 @@
 				})),
 				activeId: null,
 				assets: images.assets,
-				members: null, membersLoading: false, addingMember: false,
+				members: null, membersLoading: false, addingMember: false, removingMemberId: null,
 				templateSaving: false, uploading: false, libraryUploadTotal: 0, libraryUploads: [],
 				libraryUploadDestination: '',
 				deletingAssetId: null, deletingEditionId: null,
@@ -471,7 +472,7 @@
 
 	async function loadMembers() {
 		const current = context;
-		if (!current || current.membersLoading || current.addingMember) return;
+		if (!current || current.membersLoading || current.addingMember || current.removingMemberId !== null) return;
 		current.membersLoading = true;
 		try {
 			const result = await requestJson<{ members: ProjectMember[] }>(`/api/projects/${current.project.id}/members`);
@@ -488,7 +489,7 @@
 	async function addMember(event: SubmitEvent) {
 		event.preventDefault();
 		const current = context;
-		if (!current || current.addingMember || current.membersLoading) return;
+		if (!current || current.addingMember || current.membersLoading || current.removingMemberId !== null) return;
 		const email = memberEmail;
 		current.addingMember = true;
 		try {
@@ -498,6 +499,19 @@
 			if (context === current && memberEmail === email) memberEmail = '';
 		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.addingMember = false; }
+	}
+
+	async function removeMember(member: ProjectMember) {
+		const current = context;
+		if (!current || current.membersLoading || current.addingMember || current.removingMemberId !== null) return;
+		if (!window.confirm(`Remove ${member.name} (${member.email}) from ${current.project.name}? They will lose access to this project's campaigns, templates, and images. Their account and existing content will be kept.`)) return;
+		current.removingMemberId = member.id;
+		try {
+			const result = await requestJson<{ members: ProjectMember[]; message: string }>(`/api/projects/${current.project.id}/members/${encodeURIComponent(member.id)}`, { method: 'DELETE' });
+			current.members = result.members;
+			toasts.success(result.message);
+		} catch (cause) { toasts.error(message(cause)); }
+		finally { current.removingMemberId = null; }
 	}
 
 	async function copyPermalink(id: string) {
@@ -648,12 +662,17 @@
 					<section class="panel" aria-labelledby="sharing-heading">
 						<div class="panel-toolbar"><h2 id="sharing-heading">Share this project</h2></div>
 						<div class="member-list">
-							<div class="save-actions"><h3 id="members-heading">People with access{context.members ? ` (${context.members.length})` : ''}</h3><button class="secondary" disabled={context.membersLoading || context.addingMember} onclick={loadMembers}>Refresh members</button></div>
+							<div class="save-actions"><h3 id="members-heading">People with access{context.members ? ` (${context.members.length})` : ''}</h3><button class="secondary" disabled={context.membersLoading || context.addingMember || context.removingMemberId !== null} onclick={loadMembers}>Refresh members</button></div>
 							{#if context.membersLoading}<p role="status">Loading members…</p>{/if}
 							{#if context.members}
 								<ul aria-labelledby="members-heading">
 									{#each context.members as member (member.id)}
-										<li><div><strong>{member.name}{member.id === data.user?.id ? ' (you)' : ''}</strong><span>{member.email}</span></div><span class="member-role">{member.role === 'owner' ? 'Owner' : 'Editor'}</span></li>
+										<li><div><strong>{member.name}{member.id === data.user?.id ? ' (you)' : ''}</strong><span>{member.email}</span></div><div class="member-actions">
+											<span class="member-role">{member.role === 'owner' ? 'Owner' : 'Editor'}</span>
+											{#if context.project.role === 'owner' && member.role === 'editor'}
+												<button class="secondary remove-member" aria-label={`Remove ${member.email} from project`} disabled={context.membersLoading || context.addingMember || context.removingMemberId !== null} onclick={() => removeMember(member)}>{context.removingMemberId === member.id ? 'Removing...' : 'Remove member'}</button>
+											{/if}
+										</div></li>
 									{/each}
 								</ul>
 							{/if}
@@ -661,8 +680,9 @@
 						<form class="member-form" onsubmit={addMember}>
 							<p>Anyone with access to this project can share it with others. Add an existing user by email to grant editor access to all newsletters, templates, and images in this project. Editors can also share the project.</p>
 							<p>The recipient needs an account first. Ask an administrator to invite them if they do not have one.</p>
+							<p>Only the project owner can remove editors. Removing project access does not delete their account or existing content.</p>
 							<label for="member-email">Member email</label><input id="member-email" type="email" bind:value={memberEmail} required />
-							<button class="secondary" disabled={context.addingMember || context.membersLoading || !memberEmail.trim()}>{context.addingMember ? 'Adding…' : 'Add member'}</button>
+							<button class="secondary" disabled={context.addingMember || context.membersLoading || context.removingMemberId !== null || !memberEmail.trim()}>{context.addingMember ? 'Adding…' : 'Add member'}</button>
 						</form>
 					</section>
 				{:else if mode === 'edition-publish' && draft}
@@ -830,11 +850,13 @@
 	.member-list { padding: 20px; }
 	.member-list h3 { margin: 0; font-size: 12px; }
 	.member-list ul { list-style: none; margin: 16px 0 0; padding: 0; }
-	.member-list li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--ui-border, #e1e8d8); overflow-wrap: anywhere; }
+	.member-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--ui-border, #e1e8d8); overflow-wrap: anywhere; }
 	.member-list li > div { min-width: 0; }
 	.member-list strong, .member-list span { display: block; font-size: 12px; }
 	.member-list span { color: var(--ui-muted, #78886b); line-height: 1.8; }
 	.member-role { flex-shrink: 0; }
+	.member-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+	.remove-member { color: #9b4335; }
 	.notice { padding: 12px 15px; border-radius: 5px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 	.library { padding: 25px; }
 	.utm-form { max-width: 640px; }
