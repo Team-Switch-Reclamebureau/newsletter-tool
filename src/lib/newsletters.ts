@@ -32,6 +32,16 @@ export function createItem(): NewsletterItem {
 	return { id: crypto.randomUUID(), fields: {} };
 }
 
+export function moveNewsletterItem(newsletter: Newsletter, itemId: string, direction: -1 | 1): Newsletter {
+	const index = newsletter.items.findIndex((item) => item.id === itemId);
+	if (index < 0) throw new Error('The selected newsletter item no longer exists.');
+	const next = index + direction;
+	if (next < 0 || next >= newsletter.items.length) return newsletter;
+	const items = [...newsletter.items];
+	[items[index], items[next]] = [items[next], items[index]];
+	return { ...newsletter, items };
+}
+
 export function cloneNewsletter(newsletter: Newsletter, name: string): Newsletter {
 	return {
 		...createNewsletter(name),

@@ -68,10 +68,14 @@ Templates can be imported from `.mjml` files.
 The campaign **Content** tab offers two editor layouts:
 - **Split** keeps the full content form beside the live desktop/mobile preview.
 - **Dynamic** lets you type directly into template-driven text in the preview.
-  Click an image or link to select its field in the focused panel; the field
-  selector also exposes URLs, alt text, numbers, and fields not visible in the
-  rendered layout. **All fields & items** opens the full form for adding,
-  removing, reordering, and uploading images to items.
+  Image and link icons sit over editable images and links, opening a nearby
+  inline editor for image URLs, library choices, uploads, and destination URLs.
+  Linked images offer separate image and URL icons. Use **Done** or Escape to
+  close the editor; changes stay in the same unsaved draft. There is no permanent
+  field editor beside the preview. **All fields & items** toggles the full form
+  below the preview for alt text, hidden fields, and adding, removing, reordering,
+  and uploading images to items. Dynamic mode also has **Add item** in the preview
+  toolbar and move-up, move-down, and remove icons on each rendered item.
 
 Both layouts edit the same unsaved draft. Text is plain text (multiline fields
 preserve line breaks), not arbitrary HTML. The preview refreshes after leaving

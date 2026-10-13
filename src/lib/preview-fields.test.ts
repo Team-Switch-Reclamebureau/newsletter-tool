@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from 'parse5';
 import { composeNewsletter, createItem, createNewsletter, serializeNewsletter } from './newsletters';
-import { markPreviewFields, previewFields, previewFieldValue, updatePreviewField } from './preview-fields';
+import { markPreviewFields, previewFields, previewFieldValue, previewItemClass, updatePreviewField } from './preview-fields';
 import { renderTemplate } from './server/render';
 
 const template = '<mjml><mj-body><mj-section><mj-column><mj-text>{{newsletter_name}} / {{text:heading}}</mj-text></mj-column></mj-section>{{items}}</mj-body></mjml>';
@@ -18,6 +18,28 @@ function fixture() {
 }
 
 describe('editable preview fields', () => {
+	it('keeps both image and destination URL markers on linked images', async () => {
+		const { newsletter } = fixture();
+		const linked = '<mj-section><mj-column><mj-image src="{{image:image}}" href="{{url:url}}" /></mj-column></mj-section>';
+		const fields = previewFields(template, linked, newsletter);
+		const html = (await renderTemplate(composeNewsletter(template, linked, newsletter, fields).source)).html;
+		const image = fields.find((field) => field.itemId === newsletter.items[0].id && field.type === 'image')!;
+		const url = fields.find((field) => field.itemId === newsletter.items[0].id && field.type === 'url')!;
+		expect(html).toContain(`${image.id} ${url.id}`);
+	});
+
+	it('marks static and multi-section items for controls without adding markers to exports', async () => {
+		const { newsletter } = fixture();
+		const staticSnippet = '<mj-section><mj-column><mj-text>Static item</mj-text></mj-column></mj-section><mj-section><mj-column><mj-spacer height="10px" /></mj-column></mj-section>';
+		const fields = previewFields(template, staticSnippet, newsletter);
+		const editable = await renderTemplate(composeNewsletter(template, staticSnippet, newsletter, fields).source);
+		expect(editable.errors).toEqual([]);
+		for (const item of newsletter.items) expect(editable.html).toContain(previewItemClass(item.id));
+		const exported = await renderTemplate(composeNewsletter(template, staticSnippet, newsletter).source);
+		expect(exported.html).not.toContain('newsletter-item-');
+		expect(serializeNewsletter(newsletter)).not.toContain('newsletter-item-');
+	});
+
 	it('labels campaign fields without changing their internal edition identities', () => {
 		const { fields } = fixture();
 		const field = fields.find((field) => field.itemId === null && field.name === 'heading');

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createItem, type Newsletter } from './newsletters';
+	import { createItem, moveNewsletterItem, type Newsletter } from './newsletters';
 	import { DEFAULT_ITEM_SNIPPET, type ImageAsset, type ImageScope } from './remote';
 	import TemplateFields from './TemplateFields.svelte';
 	import { templateFields } from './template-fields';
@@ -31,13 +31,6 @@
 		return onImageUpload(newsletter.id, itemId, name, file, scope);
 	}
 
-	function moveItem(index: number, direction: number) {
-		const items = [...newsletter.items];
-		const next = index + direction;
-		if (next < 0 || next >= items.length) return;
-		[items[index], items[next]] = [items[next], items[index]];
-		onUpdate({ ...newsletter, items });
-	}
 </script>
 
 <div class="newsletter-editor">
@@ -50,8 +43,8 @@
 	{#each newsletter.items as item, index (item.id)}
 		<section class="item-card" aria-label={`Item ${index + 1}`}>
 			<div class="item-heading"><strong>Item {index + 1}</strong><div class="item-actions">
-				<button aria-label={`Move item ${index + 1} up`} disabled={index === 0} onclick={() => moveItem(index, -1)}>↑</button>
-				<button aria-label={`Move item ${index + 1} down`} disabled={index === newsletter.items.length - 1} onclick={() => moveItem(index, 1)}>↓</button>
+				<button aria-label={`Move item ${index + 1} up`} disabled={index === 0} onclick={() => onUpdate(moveNewsletterItem(newsletter, item.id, -1))}>↑</button>
+				<button aria-label={`Move item ${index + 1} down`} disabled={index === newsletter.items.length - 1} onclick={() => onUpdate(moveNewsletterItem(newsletter, item.id, 1))}>↓</button>
 				<button class="remove" aria-label={`Remove item ${index + 1}`} onclick={() => onUpdate({ ...newsletter, items: newsletter.items.filter((entry) => entry.id !== item.id) })}>Remove</button>
 			</div></div>
 			<TemplateFields fields={itemSchema.fields} values={item.fields} prefix={item.id} {assets} {imageUploading} {canUploadEditionImages} onUpdate={(name, value) => updateField(item.id, name, value)} onImageUpload={onImageUpload ? (name, file, scope) => uploadItemImage(item.id, name, file, scope) : undefined} />

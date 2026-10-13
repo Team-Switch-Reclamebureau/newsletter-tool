@@ -14,6 +14,10 @@ function fieldId(itemId: string | null, name: string): string {
 	return `newsletter-field-${itemId === null ? 'edition' : encode(itemId)}-${encode(name)}`;
 }
 
+export function previewItemClass(itemId: string): string {
+	return `newsletter-item-${fieldId(itemId, 'item')}`;
+}
+
 export function previewFields(template: string, snippet: string | null, newsletter: Newsletter): PreviewField[] {
 	const fields: PreviewField[] = [];
 	function add(source: string, itemId: string | null, label: string) {
@@ -50,9 +54,10 @@ export function markPreviewFields(source: string, fields: PreviewField[], itemId
 			if (!field || field.type === 'url' || field.type === 'image') return token;
 			return `<span data-newsletter-field="${field.id}">${token}</span>`;
 		}
-		if (!/^<(?:mj-(?:image|button|text|section|wrapper|column)|a|img)\b/i.test(token)) return token;
+		if (!/^<(?:mj-[\w-]+|a|img)\b/i.test(token)) return token;
 		const ids = [...token.matchAll(/{{\s*([^{}]*?)\s*}}/g)]
 			.map((match) => find(match[1].trim())?.id).filter((id): id is string => Boolean(id));
+		if (itemId !== null) ids.push(previewItemClass(itemId));
 		if (!ids.length) return token;
 		const classes = [...new Set(ids)].join(' ');
 		const attribute = /^<mj-/i.test(token) ? 'css-class' : 'class';

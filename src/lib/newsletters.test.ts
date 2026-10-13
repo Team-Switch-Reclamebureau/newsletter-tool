@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-	cloneNewsletter, composeNewsletter, createItem, createNewsletter, newsletterError, parseNewsletter,
+	cloneNewsletter, composeNewsletter, createItem, createNewsletter, moveNewsletterItem, newsletterError, parseNewsletter,
 	serializeNewsletter, type Newsletter
 } from './newsletters';
 import { MAX_TEMPLATE_BYTES } from './remote';
@@ -18,6 +18,19 @@ function edition(): Newsletter {
 }
 
 describe('newsletter data', () => {
+	it('moves items in either direction without changing identities, fields, or the original draft', () => {
+		const newsletter = edition();
+		newsletter.items.push({ ...createItem(), fields: { title: 'Second' } }, { ...createItem(), fields: { title: 'Third' } });
+		const original = serializeNewsletter(newsletter);
+		const moved = moveNewsletterItem(newsletter, newsletter.items[0].id, 1);
+		expect(moved.items).toEqual([newsletter.items[1], newsletter.items[0], newsletter.items[2]]);
+		expect(moveNewsletterItem(moved, newsletter.items[0].id, -1).items).toEqual(newsletter.items);
+		expect(moveNewsletterItem(newsletter, newsletter.items[0].id, -1)).toBe(newsletter);
+		expect(moveNewsletterItem(newsletter, newsletter.items[2].id, 1)).toBe(newsletter);
+		expect(() => moveNewsletterItem(newsletter, 'missing', 1)).toThrow('no longer exists');
+		expect(serializeNewsletter(newsletter)).toBe(original);
+	});
+
 	it('creates independent editions with unique ids and item arrays', () => {
 		const first = createNewsletter(' First ');
 		const second = createNewsletter('Second');
