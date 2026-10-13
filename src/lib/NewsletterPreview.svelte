@@ -138,11 +138,13 @@
 		if (editing || selection) return;
 		const current = ++version;
 		if (editable) scrollTop = untrack(() => frame?.contentDocument?.documentElement.scrollTop ?? scrollTop);
-		html = '';
 		message = inputError;
-		warnings = [];
 		loading = false;
-		if (!mjml || inputError) return;
+		if (!mjml || inputError) {
+			html = '';
+			warnings = [];
+			return;
+		}
 		loading = true;
 		const controller = new AbortController();
 		const timer = setTimeout(async () => {
@@ -164,9 +166,9 @@
 <section bind:this={panel} class="preview-panel" class:fill-viewport={fillViewport} style:height={fillViewport && viewportHeight !== undefined ? `${viewportHeight}px` : undefined} aria-label="Newsletter preview" aria-busy={loading}>
 	<div class="toolbar"><h2>Preview</h2><div><button class:active={!mobile} aria-pressed={!mobile} onclick={() => mobile = false}>Desktop</button><button class:active={mobile} aria-pressed={mobile} onclick={() => mobile = true}>Mobile</button></div></div>
 	<div class="canvas" class:mobile>
-		{#if loading}<p role="status">Putting your preview together…</p>
-		{:else if message}<div class="error" role="alert"><strong>Something needs a look</strong><p>{message}</p>{#if !error}<button onclick={() => retry++}>Try again</button>{/if}</div>
+		{#if message}<div class="error" role="alert"><strong>Something needs a look</strong><p>{message}</p>{#if !error}<button onclick={() => retry++}>Try again</button>{/if}</div>
 		{:else if html}<iframe bind:this={frame} onload={frameLoaded} title={`${name} newsletter preview`} srcdoc={html} sandbox={editable ? 'allow-same-origin' : ''} referrerpolicy="no-referrer"></iframe>
+		{:else if loading}<p role="status">Putting your preview together…</p>
 		{:else}<p>No preview available.</p>{/if}
 	</div>
 	{#if selected && selection && fieldEditor}

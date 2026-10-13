@@ -87,7 +87,9 @@ The campaign **Content** tab offers two editor layouts:
   below the last item (or at the empty items location), and move-up, move-down,
   and remove icons on each rendered item.
   The Dynamic preview fills the available window height below the campaign
-  controls and resizes with the window. On very short windows it keeps a usable
+  controls. While refreshing, the current preview remains visible until the
+  next render is ready, rather than being replaced by a loading screen.
+  It resizes with the window. On very short windows it keeps a usable
   minimum height and the page remains scrollable. Split mode keeps its normal
   preview height. Empty textarea editors fill their text container in both
   desktop and mobile previews.
