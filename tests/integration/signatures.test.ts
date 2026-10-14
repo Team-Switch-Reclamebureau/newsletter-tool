@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { startHostedFixture } from '../helpers/hosted-fixture';
 import type { SignatureDetail } from '../../src/lib/signatures';
 import { MAX_TEMPLATE_BYTES } from '../../src/lib/remote';
@@ -52,6 +53,35 @@ beforeAll(async () => {
 afterAll(async () => { if (fixture) await fixture.stop(); });
 
 describe('email signatures', () => {
+	it('migrates existing private signatures to shared content without losing variations or contacts', async () => {
+		const client = await fixture.pool.connect();
+		const signatureId = randomUUID();
+		const variationId = randomUUID();
+		const contactId = randomUUID();
+		try {
+			await client.query('BEGIN');
+			await client.query('CREATE SCHEMA legacy_workspace_migration');
+			await client.query('SET LOCAL search_path = legacy_workspace_migration');
+			await client.query('CREATE TABLE "user" (id text PRIMARY KEY); CREATE TABLE project_members (project_id uuid, user_id text)');
+			await client.query(await readFile(new URL('../../migrations/017-email-signatures.sql', import.meta.url), 'utf8'));
+			await client.query('INSERT INTO "user"(id) VALUES ($1)', ['legacy-creator']);
+			await client.query('INSERT INTO email_signatures(id, user_id, name, revision) VALUES ($1,$2,$3,7)', [signatureId, 'legacy-creator', 'Existing signature']);
+			await client.query('INSERT INTO signature_variations(id, signature_id, name, filename, html) VALUES ($1,$2,$3,$4,$5)', [variationId, signatureId, 'Existing variation', 'existing.html', '<p>{{name}}</p>']);
+			await client.query('INSERT INTO signature_contacts(id, signature_id, fields) VALUES ($1,$2,$3)', [contactId, signatureId, { name: 'Existing contact' }]);
+			await client.query('INSERT INTO project_members(project_id, user_id) VALUES ($1,$2)', [randomUUID(), 'legacy-creator']);
+			await client.query(await readFile(new URL('../../migrations/018-shared-workspace.sql', import.meta.url), 'utf8'));
+			expect((await client.query('SELECT id, name, revision, created_by FROM email_signatures')).rows).toEqual([{ id: signatureId, name: 'Existing signature', revision: 7, created_by: 'legacy-creator' }]);
+			expect((await client.query("SELECT to_regclass('legacy_workspace_migration.project_members') AS table_name")).rows[0].table_name).toBeNull();
+			await client.query('DELETE FROM "user" WHERE id = $1', ['legacy-creator']);
+			expect((await client.query('SELECT created_by FROM email_signatures')).rows).toEqual([{ created_by: null }]);
+			expect((await client.query('SELECT id, html FROM signature_variations')).rows).toEqual([{ id: variationId, html: '<p>{{name}}</p>' }]);
+			expect((await client.query('SELECT id, fields FROM signature_contacts')).rows).toEqual([{ id: contactId, fields: { name: 'Existing contact' } }]);
+		} finally {
+			await client.query('ROLLBACK');
+			client.release();
+		}
+	});
+
 	it('separates signatures from newsletters in the sidebar and requires a session', async () => {
 		expect((await request('/signatures', 'GET', undefined, '')).status).toBe(303);
 		expect((await request('/api/signatures', 'GET', undefined, '')).status).toBe(401);
@@ -111,25 +141,25 @@ describe('email signatures', () => {
 		expect(signatureHtml).toContain('aria-hidden="true"');
 	});
 
-	it('isolates signatures, contacts, and variations by owner and signature', async () => {
+	it('shares signatures across all users while keeping contacts and variations scoped to their signature', async () => {
 		let first = await create('First');
 		first = await variation(first, 'One', '<p>{{name}}</p>');
 		first = await contact(first, { name: 'First contact' });
 		let second = await create('Second');
 		second = await variation(second, 'Two', '<p>{{name}}</p>');
 		second = await contact(second, { name: 'Second contact' });
-		const outsider = await create('Private outsider', outsiderCookie);
+		const outsider = await create('Another user signature', outsiderCookie);
 		const listed = (await (await request('/api/signatures')).json()).signatures;
-		expect(listed.some((entry: SignatureDetail) => entry.id === outsider.id)).toBe(false);
-		expect((await request(`/api/signatures/${first.id}`, 'GET', undefined, outsiderCookie)).status).toBe(404);
-		expect((await request(renderPath(first), 'GET', undefined, outsiderCookie)).status).toBe(404);
-		expect((await request(`/signatures?signature=${first.id}`, 'GET', undefined, outsiderCookie)).status).toBe(404);
+		expect(listed.some((entry: SignatureDetail) => entry.id === outsider.id)).toBe(true);
+		expect((await request(`/api/signatures/${first.id}`, 'GET', undefined, outsiderCookie)).status).toBe(200);
+		expect((await request(renderPath(first), 'GET', undefined, outsiderCookie)).status).toBe(200);
+		expect((await request(`/signatures?signature=${first.id}`, 'GET', undefined, outsiderCookie)).status).toBe(200);
 		expect((await request(renderPath(first, first.variations[0].id, second.contacts[0].id))).status).toBe(404);
 		expect((await request(renderPath(first, second.variations[0].id))).status).toBe(404);
 		expect((await request(`/api/signatures/${first.id}/contacts/${second.contacts[0].id}`, 'PATCH', { fields: { name: 'Wrong signature' }, revision: first.revision })).status).toBe(404);
 		expect((await request(`/api/signatures/${first.id}/variations/${second.variations[0].id}`, 'DELETE', { revision: first.revision })).status).toBe(404);
-		expect((await request(`/api/signatures/${first.id}/contacts`, 'POST', { fields: { name: 'Unauthorized' }, revision: first.revision }, outsiderCookie)).status).toBe(404);
-		expect((await request(`/api/signatures/${first.id}`, 'DELETE', { confirmName: first.name, revision: first.revision }, outsiderCookie)).status).toBe(404);
+		expect((await request(`/api/signatures/${first.id}/contacts`, 'POST', { fields: { name: 'Added by another user' }, revision: first.revision }, outsiderCookie)).status).toBe(201);
+		expect((await request(`/api/signatures/${first.id}`, 'DELETE', { confirmName: first.name, revision: first.revision }, outsiderCookie)).status).toBe(403);
 		expect((await request(`/api/signatures/${first.id}/render?variationId=invalid&contactId=${first.contacts[0].id}`)).status).toBe(400);
 		expect((await request(`/api/signatures/${randomUUID()}`)).status).toBe(404);
 	});
@@ -208,8 +238,8 @@ describe('email signatures', () => {
 		expect(saved.revision).toBe(2);
 	});
 
-	it('deletes variations and contacts independently, then cascades signature deletion without changing newsletters', async () => {
-		let signature = await create('Delete this signature');
+	it('lets regular users delete contacts and variations but only administrators delete whole signatures, regardless of creator', async () => {
+		let signature = await create('Delete this signature', outsiderCookie);
 		signature = await variation(signature, 'One', '<p>{{name}}</p>');
 		signature = await variation(signature, 'Two', '<p>{{name}}</p>');
 		signature = await contact(signature, { name: 'Jane' });
@@ -219,13 +249,14 @@ describe('email signatures', () => {
 		expect(projectResponse.status).toBe(201);
 		const project = (await projectResponse.json()).project;
 		const deletedContact = signature.contacts[0].id;
-		const response = await request(`/api/signatures/${signature.id}/contacts/${deletedContact}`, 'DELETE', { revision: signature.revision });
+		expect((await request(`/api/signatures/${signature.id}`, 'DELETE', { revision: signature.revision, confirmName: signature.name }, outsiderCookie)).status).toBe(403);
+		const response = await request(`/api/signatures/${signature.id}/contacts/${deletedContact}`, 'DELETE', { revision: signature.revision }, outsiderCookie);
 		expect(response.status).toBe(200);
 		signature = (await response.json()).signature;
 		expect(signature.contacts).toHaveLength(1);
 		expect(signature.variations).toHaveLength(2);
 		const deletedVariation = signature.variations[0].id;
-		const remove = await request(`/api/signatures/${signature.id}/variations/${deletedVariation}`, 'DELETE', { revision: signature.revision });
+		const remove = await request(`/api/signatures/${signature.id}/variations/${deletedVariation}`, 'DELETE', { revision: signature.revision }, outsiderCookie);
 		expect(remove.status).toBe(200);
 		signature = (await remove.json()).signature;
 		expect(signature.variations).toHaveLength(1);
@@ -242,14 +273,16 @@ describe('email signatures', () => {
 		expect(projects.some((entry: { id: string }) => entry.id === project.id)).toBe(true);
 	});
 
-	it('removes private signatures and contacts when their owner account is deleted', async () => {
+	it('preserves signatures, variations, and contacts when their creator account is deleted', async () => {
 		let signature = await create('Deleted account signature', outsiderCookie);
 		signature = await variation(signature, 'Private', '<p>{{name}}</p>', outsiderCookie);
 		signature = await contact(signature, { name: 'Private contact' }, outsiderCookie);
 		const user = (await fixture.pool.query<{ id: string }>('SELECT id FROM "user" WHERE email = $1', ['outsider@example.test'])).rows[0];
 		expect((await request(`/api/admin/users/${user.id}`, 'DELETE', {})).status).toBe(200);
-		expect((await fixture.pool.query('SELECT id FROM email_signatures WHERE user_id = $1', [user.id])).rows).toEqual([]);
-		expect((await fixture.pool.query('SELECT id FROM signature_variations WHERE signature_id = $1', [signature.id])).rows).toEqual([]);
-		expect((await fixture.pool.query('SELECT id FROM signature_contacts WHERE signature_id = $1', [signature.id])).rows).toEqual([]);
+		expect((await fixture.pool.query('SELECT created_by FROM email_signatures WHERE id = $1', [signature.id])).rows).toEqual([{ created_by: null }]);
+		expect((await fixture.pool.query('SELECT id FROM signature_variations WHERE signature_id = $1', [signature.id])).rows).toHaveLength(1);
+		expect((await fixture.pool.query('SELECT id FROM signature_contacts WHERE signature_id = $1', [signature.id])).rows).toHaveLength(1);
+		expect((await request(`/api/signatures/${signature.id}`)).status).toBe(200);
+		expect((await request(renderPath(signature))).status).toBe(200);
 	});
 });

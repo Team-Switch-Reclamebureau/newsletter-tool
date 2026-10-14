@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { mkdir, rename, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cloneNewsletter, composeNewsletter, createNewsletter, createItem, type Newsletter } from '../../src/lib/newsletters';
-import { DEFAULT_TEMPLATE, MAX_IMAGE_BYTES, type ImageAsset, type ProjectMember, type RemoteProject } from '../../src/lib/remote';
+import { DEFAULT_TEMPLATE, MAX_IMAGE_BYTES, type ImageAsset, type RemoteProject } from '../../src/lib/remote';
 import { DEFAULT_APPLICATION_SETTINGS, type ApplicationSettings } from '../../src/lib/application-settings';
 import { EMPTY_UTM } from '../../src/lib/utm';
 import { startHostedFixture } from '../helpers/hosted-fixture';
@@ -134,11 +134,11 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		edition.utm = utm;
 		const editionPath = `${path}/newsletters/${edition.id}`;
 		const body = { newsletter: edition, revision: 1 };
-		expect((await request(editionPath, 'PATCH', body, outsiderCookie)).status).toBe(404);
+		expect((await request(editionPath, 'PATCH', body, '')).status).toBe(401);
 		for (const invalid of [null, { utm_source: 1 }, { utm_campaign: 'x'.repeat(201) }]) {
 			expect((await request(editionPath, 'PATCH', { ...body, newsletter: { ...edition, utm: invalid } })).status).toBe(400);
 		}
-		const updated = await request(editionPath, 'PATCH', body);
+		const updated = await request(editionPath, 'PATCH', body, outsiderCookie);
 		expect(updated.status).toBe(200);
 		expect((await updated.json()).newsletter.utm).toEqual(utm);
 		expect((await request(editionPath, 'PATCH', body)).status).toBe(409);
@@ -198,7 +198,6 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		const unusedImage = await image('unused.png', first.id);
 		const editionPath = `${path}/newsletters/${first.id}`;
 		expect((await request(editionPath, 'DELETE', { revision: 2 }, '')).status).toBe(401);
-		expect((await request(editionPath, 'DELETE', { revision: 2 }, outsiderCookie)).status).toBe(404);
 		expect((await request(editionPath, 'DELETE', { revision: 2 }, ownerCookie, 'https://untrusted.example')).status).toBe(403);
 		expect((await request(editionPath, 'DELETE', { revision: 1 })).status).toBe(409);
 		expect((await request(editionPath, 'DELETE', {})).status).toBe(400);
@@ -207,14 +206,14 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		await rename(file, backup);
 		await mkdir(file);
 		try {
-			const failed = await request(editionPath, 'DELETE', { revision: 2 });
+			const failed = await request(editionPath, 'DELETE', { revision: 2 }, outsiderCookie);
 			expect(failed.status).toBe(500);
 			expect(await failed.text()).toContain('image cleanup failed');
 		} finally {
 			await rmdir(file);
 			await rename(backup, file);
 		}
-		const retried = await request(editionPath, 'DELETE', { revision: 2 });
+		const retried = await request(editionPath, 'DELETE', { revision: 2 }, outsiderCookie);
 		expect(retried.status).toBe(200);
 		expect((await retried.json()).deletedAssetIds).toEqual([unusedImage.id]);
 		expect((await fetch(unusedImage.url)).status).toBe(404);
@@ -347,83 +346,37 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect(wrong.status).toBe(401);
 	});
 
-	it('creates projects and restricts them to their members', async () => {
+	it('makes every newsletter visible to every signed-in user without project roles', async () => {
 		const created = await request('/api/projects', 'POST', { name: 'Studio project' });
 		expect(created.status).toBe(201);
 		project = (await created.json()).project;
 		const outsiderCreated = await request('/api/projects', 'POST', { name: 'Other project' }, outsiderCookie);
 		outsiderProject = (await outsiderCreated.json()).project;
-		expect(outsiderProject.role).toBe('owner');
+		expect(outsiderProject).not.toHaveProperty('role');
 		expect((await request('/api/admin/settings', 'GET', undefined, outsiderCookie)).status).toBe(403);
 		const list = await request('/api/projects', 'GET', undefined, outsiderCookie);
-		expect((await list.json()).projects.map((project: RemoteProject) => project.id)).toEqual([outsiderProject.id]);
-		expect((await request(`/api/projects/${project.id}/assets`, 'GET', undefined, outsiderCookie)).status).toBe(404);
-		expect((await request(`/api/projects/${project.id}/newsletters`, 'GET', undefined, outsiderCookie)).status).toBe(404);
+		expect((await list.json()).projects.map((project: RemoteProject) => project.id)).toEqual(expect.arrayContaining([project.id, outsiderProject.id]));
+		expect((await request(`/api/projects/${project.id}/assets`, 'GET', undefined, outsiderCookie)).status).toBe(200);
+		expect((await request(`/api/projects/${project.id}/newsletters`, 'GET', undefined, outsiderCookie)).status).toBe(200);
 	});
 
-	it('shares projects with provisioned users without granting ownership', async () => {
-		const shared = await request(`/api/projects/${project.id}/members`, 'POST', { email: 'member@example.test' });
-		expect(shared.status).toBe(200);
+	it('lets regular users edit newsletters created by other users without sharing', async () => {
 		const list = await request('/api/projects', 'GET', undefined, memberCookie);
-		expect((await list.json()).projects[0].role).toBe('editor');
-		expect((await request(`/api/projects/${project.id}/members`, 'POST', { email: 'owner@example.test' }, memberCookie)).status).toBe(200);
-		const ownerProjects = (await (await request('/api/projects')).json()).projects as RemoteProject[];
-		expect(ownerProjects.find((entry) => entry.id === project.id)?.role).toBe('owner');
+		expect((await list.json()).projects).toEqual(expect.arrayContaining([project, outsiderProject]));
+		const response = await request(`/api/projects/${outsiderProject.id}`, 'PATCH', { ...outsiderProject, name: 'Updated by another regular user' }, memberCookie);
+		expect(response.status).toBe(200);
+		outsiderProject = (await response.json()).project;
+		expect(outsiderProject.name).toBe('Updated by another regular user');
 	});
 
-	it('lists only project members for owners and editors and refreshes the list when sharing', async () => {
-		const created = await request('/api/projects', 'POST', { name: 'Access list' });
-		expect(created.status).toBe(201);
-		const accessProject = (await created.json()).project as RemoteProject;
-		const path = `/api/projects/${accessProject.id}/members`;
-		expect((await request(path, 'GET', undefined, '')).status).toBe(401);
-		expect((await request(path, 'GET', undefined, memberCookie)).status).toBe(404);
-		expect((await request(path, 'GET', undefined, outsiderCookie)).status).toBe(404);
-		expect((await request(`/api/projects/${outsiderProject.id}/members`)).status).toBe(404);
-		const initial = await request(path);
-		expect(initial.status).toBe(200);
-		const owner = { id: expect.any(String), name: 'owner', email: 'owner@example.test', role: 'owner' };
-		expect((await initial.json()).members).toEqual([owner]);
-		const shared = await request(path, 'POST', { email: 'member@example.test' });
-		expect(shared.status).toBe(200);
-		const expected = [owner, { id: expect.any(String), name: 'member', email: 'member@example.test', role: 'editor' }];
-		const members = (await shared.json()).members as ProjectMember[];
-		expect(members).toEqual(expected);
-		expect(new Set(members.map((member) => member.id)).size).toBe(2);
-		for (const cookie of [ownerCookie, memberCookie]) {
-			const response = await request(path, 'GET', undefined, cookie);
-			expect(response.status).toBe(200);
-			expect((await response.json()).members).toEqual(expected);
+	it('removes sharing endpoints and membership storage', async () => {
+		const path = `/api/projects/${project.id}/members`;
+		for (const cookie of [ownerCookie, memberCookie, outsiderCookie]) {
+			expect((await request(path, 'GET', undefined, cookie)).status).toBe(404);
+			expect((await request(path, 'POST', { email: 'member@example.test' }, cookie)).status).toBe(404);
+			expect((await request(`${path}/unused-user`, 'DELETE', undefined, cookie)).status).toBe(404);
 		}
-		const duplicate = await request(path, 'POST', { email: 'owner@example.test' }, memberCookie);
-		expect(duplicate.status).toBe(200);
-		expect((await duplicate.json()).members).toEqual(expected);
-		const extended = await request(path, 'POST', { email: 'outsider@example.test' }, memberCookie);
-		expect(extended.status).toBe(200);
-		const allMembers = [...expected, { id: expect.any(String), name: 'outsider', email: 'outsider@example.test', role: 'editor' }];
-		expect((await extended.json()).members).toEqual(allMembers);
-		expect((await (await request(path, 'GET', undefined, outsiderCookie)).json()).members).toEqual(allMembers);
-	});
-
-	it('lets editors share projects and newly added editors share them again, but blocks non-members', async () => {
-		const created = await request('/api/projects', 'POST', { name: 'Member sharing' });
-		expect(created.status).toBe(201);
-		const sharingProject = (await created.json()).project as RemoteProject;
-		const path = `/api/projects/${sharingProject.id}/members`;
-		const body = { email: 'outsider@example.test' };
-		expect((await request(path, 'POST', body, '')).status).toBe(401);
-		expect((await request(path, 'POST', body, memberCookie)).status).toBe(404);
-		expect((await request(path, 'POST', { email: 'member@example.test' })).status).toBe(200);
-		expect((await request(path, 'POST', body, memberCookie, 'https://untrusted.example')).status).toBe(403);
-		expect((await request(path, 'POST', { email: 42 }, memberCookie)).status).toBe(400);
-		expect((await request(path, 'POST', { email: 'not-provisioned@example.test' }, memberCookie)).status).toBe(404);
-		expect((await request(path, 'POST', { email: '  OUTSIDER@example.test  ' }, memberCookie)).status).toBe(200);
-		expect((await request(path, 'POST', body, memberCookie)).status).toBe(200);
-		const outsiderProjects = (await (await request('/api/projects', 'GET', undefined, outsiderCookie)).json()).projects as RemoteProject[];
-		expect(outsiderProjects.filter((entry) => entry.id === sharingProject.id)).toEqual([{ ...sharingProject, role: 'editor' }]);
-		expect((await request(`/api/projects/${sharingProject.id}/newsletters`, 'GET', undefined, outsiderCookie)).status).toBe(200);
-		expect((await request(path, 'POST', { email: 'member@example.test' }, outsiderCookie)).status).toBe(200);
-		expect((await request(`/api/projects/${outsiderProject.id}/members`, 'POST', { email: 'member@example.test' })).status).toBe(404);
+		expect((await fixture.pool.query("SELECT to_regclass('public.project_members') AS table_name")).rows[0].table_name).toBeNull();
 	});
 
 	it('saves templates with optimistic concurrency protection', async () => {
@@ -579,7 +532,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 			[legacyId, edition.id, JSON.stringify(historical), composeNewsletter(DEFAULT_TEMPLATE, null, historical).source, legacyHtml]);
 		const download = `${path}/publications/${legacyId}?format=html`;
 		expect((await request(download, 'GET', undefined, '')).status).toBe(401);
-		expect((await request(download, 'GET', undefined, outsiderCookie)).status).toBe(404);
+		expect((await request(download, 'GET', undefined, outsiderCookie)).status).toBe(200);
 		expect(await (await request(download)).text()).toBe(legacyHtml);
 		expect((await request(`${path}/publications`, 'POST', { newsletterId: edition.id })).status).toBe(405);
 		expect((await request(`${path}/assets/${oldImage.id}`, 'DELETE')).status).toBe(200);
@@ -625,7 +578,7 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		const second = await createEdition('Second edition');
 		const png = new Uint8Array(await sharp({ create: { width: 16, height: 16, channels: 3, background: '#426838' } }).png().toBuffer());
 		const sharedResponse = await upload(png, 'image/png', 'project.png', scopedProject.id);
-		const editionResponse = await upload(png, 'image/png', 'first-only.png', scopedProject.id, first.id);
+		const editionResponse = await upload(png, 'image/png', 'first-only.png', scopedProject.id, first.id, outsiderCookie);
 		expect(sharedResponse.status).toBe(201);
 		expect(editionResponse.status).toBe(201);
 		const shared = (await sharedResponse.json()).asset as ImageAsset;
@@ -644,10 +597,9 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect((await grouped.json()).editionAssets[first.id].map((asset: ImageAsset) => asset.id)).toEqual([exclusive.id]);
 		expect((await request(`${path}/assets?newsletterId=invalid`)).status).toBe(400);
 		expect((await request(`${path}/assets?newsletterId=${crypto.randomUUID()}`)).status).toBe(404);
-		expect((await request(`${path}/assets?newsletterId=${first.id}`, 'GET', undefined, outsiderCookie)).status).toBe(404);
+		expect((await request(`${path}/assets?newsletterId=${first.id}`, 'GET', undefined, outsiderCookie)).status).toBe(200);
 		expect((await upload(png, 'image/png', 'unsaved.png', scopedProject.id, crypto.randomUUID())).status).toBe(404);
 		expect((await upload(png, 'image/png', 'wrong-project.png', project.id, first.id)).status).toBe(404);
-		expect((await upload(png, 'image/png', 'outsider.png', scopedProject.id, first.id, outsiderCookie)).status).toBe(404);
 		const firstContent = {
 			...first, fields: { hero: exclusive.url },
 			items: [{ ...first.items[0], fields: { photo: exclusive.url } }]
@@ -712,9 +664,8 @@ describe('self-hosted workspace against PostgreSQL', () => {
 		expect((await request(`${path}/newsletters`, 'POST', { newsletter: clone, cloneSourceId: first.id })).status).toBe(201);
 		const editionDelete = `${path}/assets/${editionImage.id}`;
 		expect((await request(editionDelete, 'DELETE')).status).toBe(404);
-		expect((await request(`${editionDelete}?newsletterId=${first.id}`, 'DELETE', undefined, outsiderCookie)).status).toBe(404);
 		expect((await request(`${path}/assets/${projectImage.id}`, 'DELETE', undefined, ownerCookie, 'https://untrusted.example')).status).toBe(403);
-		const firstRemoved = await request(`${editionDelete}?newsletterId=${first.id}`, 'DELETE');
+		const firstRemoved = await request(`${editionDelete}?newsletterId=${first.id}`, 'DELETE', undefined, outsiderCookie);
 		expect(firstRemoved.status).toBe(200);
 		expect((await firstRemoved.json()).fileDeleted).toBe(false);
 		expect((await fetch(editionImage.url)).status).toBe(200);

@@ -1,10 +1,10 @@
 import { error, json } from '@sveltejs/kit';
-import { api, rateLimit, readJson, requireUser, revision, uuid } from '#lib/server/http.js';
+import { api, rateLimit, readJson, requireAdmin, requireUser, revision, uuid } from '#lib/server/http.js';
 import { projectInput, requireProject, transaction, validateHostedImageReferences } from '#lib/server/workspace.js';
 import { imageInUse } from '#lib/server/image-usage.js';
 
 export const DELETE = api(async (event) => {
-	const { pool, user, storage } = requireUser(event);
+	const { pool, user, storage } = requireAdmin(event);
 	const id = uuid(event.params.projectId);
 	const body = await readJson(event.request);
 	if (Object.keys(body).some((key) => !['confirmName', 'revision'].includes(key))) error(400, 'Send only the confirmation name and saved revision.');
@@ -12,7 +12,7 @@ export const DELETE = api(async (event) => {
 	await rateLimit(pool, `delete-project:${user.id}`, 30);
 	const deletedAssetIds = await transaction(pool, async (client) => {
 		const current = await requireProject(client, id, user.id, true, true);
-		if (current.role !== 'owner') error(403, 'Only the project owner can delete this project.');
+		if (!(await client.query('SELECT user_id FROM application_admins WHERE user_id = $1', [user.id])).rowCount) error(403, 'Only administrators can delete newsletters.');
 		if (current.revision !== expected) error(409, 'This project changed elsewhere. Reload before deleting.');
 		if (body.confirmName !== current.name) error(400, 'Type the exact saved project name to confirm deletion.');
 		await client.query('UPDATE projects SET deleted_at = coalesce(deleted_at, now()) WHERE id = $1', [id]);
@@ -33,8 +33,8 @@ export const DELETE = api(async (event) => {
 		}
 	}
 	await transaction(pool, async (client) => {
-		const current = await requireProject(client, id, user.id, true, true);
-		if (current.role !== 'owner') error(403, 'Only the project owner can finish deleting this project.');
+		await requireProject(client, id, user.id, true, true);
+		if (!(await client.query('SELECT user_id FROM application_admins WHERE user_id = $1', [user.id])).rowCount) error(403, 'Only administrators can finish deleting newsletters.');
 		await client.query('UPDATE projects SET deletion_completed_at = coalesce(deletion_completed_at, now()) WHERE id = $1', [id]);
 	});
 	return json({ deletedAssetIds, message: 'Project deleted. Its campaigns and HTML links are no longer available, and its image files were permanently removed.' });

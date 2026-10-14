@@ -55,31 +55,28 @@ selected contact/variation pair. Previews run in a sandboxed iframe; downloads
 require sign-in and are not public newsletter permalinks. Use absolute public
 image URLs (or embedded raster images) for signatures used outside the application.
 
-Signatures are private to their owning account, independent of newsletter
-membership. Saving uses revision checks; use **Reload signature** to recover
-from a conflict without overwriting another session's changes. Deleting a contact
+All signed-in users can view and edit every signature. Saving uses revision
+checks; refresh the page to recover from a conflict without overwriting another
+session's changes. Refreshing discards unsaved changes. Deleting a contact
 removes it from all variations in that signature; deleting a variation keeps the
 contacts. Deleting a signature permanently removes all its variations and
-contacts. Deleting its owner account also removes its private signatures, unlike
-owned newsletters, which transfer to the deleting administrator.
+contacts. Only administrators can delete whole signatures; regular users can
+delete individual contacts and variations. Deleting an account preserves all
+signatures, variations, and contacts.
 
 ### Newsletters
 
-Users sign in to private projects. Each project has editable MJML templates,
+Users sign in to a shared workspace. Each project has editable MJML templates,
 newsletter campaigns, a reusable image library, and live HTML export permalinks.
 The interface calls projects **Newsletters** and newsletter variations **Campaigns**;
 project and edition names used internally,
 API routes, stored data, and JSON formats remain unchanged.
-Any project member can share a project with other provisioned accounts as editors
-from the project's **Sharing** tab. Access covers all campaigns, templates, and
-images in the project; newly added editors can also share it with others.
-The Sharing tab lists everyone with access by name, email, and project role,
-including the owner. Only project owners can **Remove member** for editors;
-owners cannot be removed. Removing project access leaves the person's account,
-other project access, and existing campaigns and images intact.
-The list updates after adding or removing a member; use **Refresh members**
-to check for access granted by others.
-The server checks project membership for every project operation. Public
+Every signed-in user can access and edit every newsletter, campaign, template,
+image library, and signature. There are no owners, memberships, or sharing controls.
+Regular users can create and edit content, send test emails, and delete individual
+campaigns, images, signature variations, and contacts. Only administrators can
+delete whole newsletters or signatures. Account and SMTP administration remain
+administrator-only. The server checks authentication for every workspace operation. Public
 registration is blocked; administrators invite users from Admin settings or
 create accounts with the provisioning script.
 
@@ -197,19 +194,19 @@ Failed preference saves are shown explicitly and restore the previous layout.
 Open a campaign from the **Campaigns** tab by clicking its name or **Open** button.
 Rename campaigns in the campaign **Settings** tab alongside UTM settings.
 The newsletter **Newsletter settings** tab contains its name and shared test-email
-recipients. Any member can save these settings. Name changes use project revision
+recipients. Any signed-in user can save these settings. Name changes use project revision
 checks and do not save or discard template or campaign drafts. Test-email recipients
 use their own revision checks; **Test & publish** shows the saved list and links
 back to Newsletter settings to edit it.
 
-Only the newsletter owner can **Delete newsletter**, after typing its exact saved name.
+Only administrators can **Delete newsletter**, after typing its exact saved name.
 Deletion removes access for everyone, disables all campaign HTML exports, discards
 the project's local drafts, and permanently removes its shared and campaign image
 files. It cannot be undone. Other projects and accounts are unaffected. Deletion
 is blocked if an image is referenced by another saved project or an open local
 project draft. As with campaign deletion, database tombstones and immutable
 publication history are retained, but are no longer accessible through the app.
-If file cleanup fails, the project remains visible only to its owner as pending
+If file cleanup fails, the project remains visible only to administrators as pending
 deletion, with editing disabled. Reopen Project settings and retry deletion to
 finish cleanup; retries also work after a browser reload. Already downloaded or
 cached email images cannot be revoked. Migration `015-project-deletion.sql` runs
@@ -257,8 +254,8 @@ The same SMTP configuration is used for account emails and newsletter tests.
 Enter up to **20 comma-separated email addresses** in **Shared test-email recipients**
 and click **Save recipients**, then **Send test email**. The recipient list is
 stored in PostgreSQL for the whole project, shared across its campaigns and project
-members, and restored on later visits. Revision checks prevent overwriting another
-member's recipient edits or sending to a list changed since you loaded it;
+users, and restored on later visits. Revision checks prevent overwriting another
+user's recipient edits or sending to a list changed since you loaded it;
 reload the project if a conflict is reported. Saving an
 empty list clears it. Addresses are normalized and duplicates are removed.
 
@@ -334,8 +331,8 @@ docker compose run --rm -it migrate npm run user:create -- person@example.com "P
 The provisioning command prompts for a password without exposing it in command
 arguments. Passwords must contain at least 12 characters. Provision additional
 users the same way, or provision an administrator with `--admin`, configure SMTP
-in **Admin settings**, and invite users there. Add their email addresses from a
-project's **Sharing** tab to grant project access. Public self-service registration
+in **Admin settings**, and invite users there. All provisioned users automatically
+have access to every newsletter and signature. Public self-service registration
 remains blocked.
 
 Compose runs migrations before starting the app. Caddy terminates HTTPS, serves
@@ -564,14 +561,14 @@ database volume; changing passwords in `.env` alone does not rotate existing rol
 
 ### Administrator settings
 
-Application administrators are separate from project owners. No account becomes
+Application administrators have additional deletion and administration permissions. No account becomes
 an administrator automatically. Using the database-owner connection, provision
 an administrator or grant that role to an existing account:
 
 ```sh
 npm run user:create -- person@example.com "Person Name" --admin
 npm run user:role -- person@example.com admin
-# Remove administrator access without changing their project memberships:
+# Remove administrator access without changing access to workspace content:
 npm run user:role -- person@example.com user
 ```
 
@@ -617,23 +614,21 @@ SMTP configuration edits use revision checks to prevent lost updates.
 name/email; they receive a one-hour link to choose their own password.
 Pending invitations can be resent. If delivery fails, the pending account
 remains in the list: refresh it, fix SMTP, then resend.
-Grant/revoke administrator access separately from project membership.
+Grant/revoke administrator access without changing shared workspace access.
 Administrators cannot change their own role in the UI; another administrator
 or the recovery CLI must do that. Role changes apply on subsequent requests.
 
 Administrators can permanently **Delete user** after confirming the action.
-They cannot delete their own account. All projects owned by the deleted user
-transfer to the administrator performing the deletion, including projects where
-that administrator was already an editor. Other memberships, credentials,
-sessions, pending invitations, preferences, and password reset links are removed.
-Private email signatures, their HTML variations, and signature contacts are also
-permanently removed; they do not transfer to the administrator.
-Projects, templates, campaigns, images, publication snapshots, and public export
+They cannot delete their own account. Credentials, sessions, pending invitations,
+preferences, and password reset links are removed.
+Newsletters, templates, campaigns, images, signatures, HTML variations, signature
+contacts, publication snapshots, and public export
 and image URLs remain intact. Historical creator references become empty rather
-than being attributed to the new owner. Account deletion cannot be undone.
-Migration `014-user-removal.sql` enables content-preserving deletion; deployments
-run it automatically. For local development, run `npm run db:migrate` before
-using account deletion.
+than being attributed to another account. Account deletion cannot be undone.
+Migration `018-shared-workspace.sql` removes newsletter memberships and preserves
+existing signatures when their creator account is deleted. Deployments, including
+the VPS update script, run it automatically. For local development, run
+`npm run db:migrate` before using the shared workspace.
 
 Users can select **Forgot your password?** on the sign-in screen or **Change
 password** in the workspace sidebar. Passwords must contain 12–128 characters.
@@ -871,7 +866,7 @@ npm run test:integration
 Integration tests start a temporary, real PostgreSQL cluster using bundled
 development binaries and the built Node server. They require no Docker or
 production credentials, and remove their test database and image files afterwards.
-They verify login, membership isolation, image normalization/public delivery,
+They verify login, shared workspace permissions, image normalization/public delivery,
 revision conflicts, stable public HTML permalinks, live export updates, deletion,
 UTM tracking, and legacy read-only export compatibility.
 

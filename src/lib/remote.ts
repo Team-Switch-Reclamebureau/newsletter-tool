@@ -23,15 +23,7 @@ export interface RemoteProject {
 	template: string;
 	itemTemplate: string | null;
 	revision: number;
-	role: 'owner' | 'editor';
 	deletionPending: boolean;
-}
-
-export interface ProjectMember {
-	id: string;
-	name: string;
-	email: string;
-	role: RemoteProject['role'];
 }
 
 export type ImageScope = 'project' | 'edition';

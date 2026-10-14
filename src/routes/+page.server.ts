@@ -13,7 +13,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const [projects, preferences, signatures] = await Promise.all([
 		listProjects(runtime.pool, locals.user.id),
 		getUserPreferences(runtime.pool, locals.user.id),
-		listSignatures(runtime.pool, locals.user.id)
+		listSignatures(runtime.pool)
 	]);
 	return { configured: true, user: locals.user, projects, signatures, initialProjectId: url.searchParams.get('project'), creatingProject: url.searchParams.get('new') === '1', preferences };
 };

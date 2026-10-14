@@ -16,14 +16,8 @@ export async function deleteAdminUser(pool: Pool, actorId: string, userId: strin
 			const admins = await client.query<{ count: number }>('SELECT count(*)::int AS count FROM application_admins');
 			if (admins.rows[0].count <= 1) error(409, 'The last administrator cannot be deleted.');
 		}
-		const transferred = await client.query(`
-			INSERT INTO project_members(project_id, user_id, role)
-			SELECT project_id, $2, 'owner' FROM project_members WHERE user_id = $1 AND role = 'owner'
-			ON CONFLICT (project_id, user_id) DO UPDATE SET role = 'owner'
-			RETURNING project_id`, [userId, actorId]);
 		await client.query("DELETE FROM verification WHERE value = $1 AND identifier LIKE 'reset-password:%'", [userId]);
 		await client.query('DELETE FROM "user" WHERE id = $1', [userId]);
-		return transferred.rows.length;
 	});
 }
 

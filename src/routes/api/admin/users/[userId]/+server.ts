@@ -7,8 +7,8 @@ export const DELETE = api(async (event) => {
 	const { pool, user } = requireAdmin(event);
 	const id = event.params.userId;
 	if (!id) error(400, 'A user id is required.');
-	const transferredProjects = await deleteAdminUser(pool, user.id, id);
-	return json({ users: await readAdminUsers(pool), transferredProjects });
+	await deleteAdminUser(pool, user.id, id);
+	return json({ users: await readAdminUsers(pool) });
 });
 
 export const PATCH = api(async (event) => {

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { createItem, createNewsletter, type Newsletter } from '../../src/lib/newsletters';
-import type { ImageAsset, ProjectMember, RemoteProject } from '../../src/lib/remote';
+import type { ImageAsset, RemoteProject } from '../../src/lib/remote';
 import { requireProject } from '../../src/lib/server/workspace';
 import { startHostedFixture } from '../helpers/hosted-fixture';
 
@@ -37,10 +37,6 @@ async function project(cookie = ownerCookie) {
 	return (await response.json()).project as RemoteProject;
 }
 
-async function share(projectId: string, email: string, cookie = ownerCookie) {
-	expect((await request(`/api/projects/${projectId}/members`, 'POST', { email }, cookie)).status).toBe(200);
-}
-
 async function content(projectId: string, cookie: string) {
 	const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#426838' } }).png().toBuffer();
 	const form = new FormData();
@@ -73,7 +69,7 @@ beforeAll(async () => {
 afterAll(async () => { if (fixture) await fixture.stop(); });
 beforeEach(async () => { await fixture.pool.query('DELETE FROM "rateLimit"'); });
 
-describe('user and project-member removal', () => {
+describe('user removal and shared content preservation', () => {
 	it('requires admin access and a trusted origin, rejects self-deletion, and reports missing accounts', async () => {
 		const target = await account('protected@example.test');
 		const path = `/api/admin/users/${target.id}`;
@@ -85,56 +81,41 @@ describe('user and project-member removal', () => {
 		expect((await fixture.pool.query('SELECT id FROM "user" WHERE id = $1', [target.id])).rowCount).toBe(1);
 	});
 
-	it('lets only owners remove editors, preserving their account, other access, campaigns, and public files', async () => {
-		const editor = await account('removed-editor@example.test');
+	it('gives newly provisioned accounts access to existing newsletters without membership setup', async () => {
 		const shared = await project();
+		const editor = await account('new-editor@example.test');
 		const other = await project(editor.cookie);
-		await share(shared.id, editor.email);
-		await share(shared.id, 'member@example.test');
 		const saved = await content(shared.id, editor.cookie);
-		const path = `/api/projects/${shared.id}/members/${editor.id}`;
-		expect((await request(path, 'DELETE', undefined, '')).status).toBe(401);
-		expect((await request(path, 'DELETE', undefined, memberCookie)).status).toBe(403);
-		expect((await request(path, 'DELETE', undefined, ownerCookie, 'https://untrusted.example')).status).toBe(403);
-		expect((await request(`/api/projects/${other.id}/members/${editor.id}`, 'DELETE')).status).toBe(404);
-		expect((await request(`/api/projects/${shared.id}/members/${ownerId}`, 'DELETE')).status).toBe(400);
-		const removed = await request(path, 'DELETE');
-		expect(removed.status).toBe(200);
-		const members = (await removed.json()).members as ProjectMember[];
-		expect(members.some((member) => member.id === editor.id)).toBe(false);
-		expect(members.find((member) => member.id === ownerId)?.role).toBe('owner');
-		expect((await request(path, 'DELETE')).status).toBe(404);
-		expect((await request(`/api/projects/${shared.id}/newsletters`, 'GET', undefined, editor.cookie)).status).toBe(404);
-		expect((await request(`/api/projects/${shared.id}`, 'PATCH', { ...shared, name: 'Unauthorized change' }, editor.cookie)).status).toBe(404);
-		expect((await request(`/api/projects/${other.id}/members`, 'GET', undefined, editor.cookie)).status).toBe(200);
+		expect((await request(`/api/projects/${shared.id}/newsletters`, 'GET', undefined, editor.cookie)).status).toBe(200);
+		expect((await request(`/api/projects/${shared.id}`, 'PATCH', { ...shared, name: 'Updated by a new user' }, editor.cookie)).status).toBe(200);
+		expect((await request(`/api/projects/${other.id}/newsletters`, 'GET', undefined, memberCookie)).status).toBe(200);
 		expect(await login(editor.email)).toBeTruthy();
 		expect(await (await fetch(saved.permalink)).text()).toBe(saved.html);
 		expect((await fetch(saved.asset.url)).status).toBe(200);
 		expect((await fixture.pool.query<{ created_by: string }>('SELECT created_by FROM newsletters WHERE id = $1', [saved.newsletter.id])).rows[0].created_by).toBe(editor.id);
 	});
 
-	it('rechecks project membership when a queued edit resumes after access removal', async () => {
+	it('rejects queued edits when the acting account is deleted before its write lock is acquired', async () => {
 		const editor = await account('queued-editor@example.test');
 		const shared = await project();
-		await share(shared.id, editor.email);
 		const blocker = await fixture.pool.connect();
 		let pending: Promise<Response> | undefined;
 		try {
 			await blocker.query('BEGIN');
-			await blocker.query('SELECT id FROM projects WHERE id = $1 FOR UPDATE', [shared.id]);
+			await blocker.query('SELECT id FROM "user" WHERE id = $1 FOR UPDATE', [editor.id]);
 			pending = request(`/api/projects/${shared.id}`, 'PATCH', { ...shared, name: 'Must not be saved' }, editor.cookie);
 			await vi.waitFor(async () => {
-				const waiting = await fixture.pool.query(`SELECT pid FROM pg_stat_activity WHERE usename = 'postroom_app' AND wait_event_type = 'Lock' AND query LIKE '%FOR NO KEY UPDATE%'`);
+				const waiting = await fixture.pool.query(`SELECT pid FROM pg_stat_activity WHERE usename = 'postroom_app' AND wait_event_type = 'Lock' AND query LIKE '%FOR KEY SHARE%'`);
 				expect(waiting.rowCount).toBe(1);
 			}, { timeout: 5000 });
-			await blocker.query('DELETE FROM project_members WHERE project_id = $1 AND user_id = $2', [shared.id, editor.id]);
+			await blocker.query('DELETE FROM "user" WHERE id = $1', [editor.id]);
 			await blocker.query('COMMIT');
 		} finally {
 			await blocker.query('ROLLBACK');
 			blocker.release();
 		}
 		if (!pending) throw new Error('Expected a queued edit.');
-		expect((await pending).status).toBe(404);
+		expect((await pending).status).toBe(401);
 		expect((await fixture.pool.query('SELECT name, revision FROM projects WHERE id = $1', [shared.id])).rows[0]).toEqual({ name: shared.name, revision: shared.revision });
 	});
 
@@ -148,7 +129,7 @@ describe('user and project-member removal', () => {
 		const response = await request(`/api/admin/users/${target.id}`, 'DELETE');
 		expect(response.status).toBe(200);
 		const result = await response.json();
-		expect(result.transferredProjects).toBe(0);
+		expect(result).not.toHaveProperty('transferredProjects');
 		expect(result.users.some((user: { id: string }) => user.id === target.id)).toBe(false);
 		for (const table of ['user', 'account', 'session', 'application_admins', 'user_invitations', 'user_preferences']) {
 			const key = table === 'user' ? 'id' : table === 'account' || table === 'session' ? 'userId' : 'user_id';
@@ -160,26 +141,22 @@ describe('user and project-member removal', () => {
 		expect((await request('/api/auth/reset-password', 'POST', { token, newPassword: fixture.password }, '')).status).toBe(400);
 	});
 
-	it('transfers every owned project, promotes an existing editor, and preserves authored immutable content under the restricted role', async () => {
+	it('preserves every newsletter and authored immutable content without transfers under the restricted role', async () => {
 		const target = await account('content-owner@example.test');
 		const first = await project(target.cookie);
 		const second = await project(target.cookie);
 		const editorsOnly = await project();
-		await share(second.id, 'owner@example.test', target.cookie);
-		await share(editorsOnly.id, target.email);
 		const saved = await content(first.id, target.cookie);
 		const editorContent = await content(editorsOnly.id, target.cookie);
 		const publicationId = randomUUID();
 		await fixture.pool.query('INSERT INTO newsletter_publications(id, newsletter_id, project_id, content, mjml, html, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', [publicationId, saved.newsletter.id, first.id, saved.newsletter, first.template, saved.html, target.id]);
 		const response = await request(`/api/admin/users/${target.id}`, 'DELETE');
 		expect(response.status, fixture.appLogs.join('\n')).toBe(200);
-		expect((await response.json()).transferredProjects).toBe(2);
+		expect(await response.json()).not.toHaveProperty('transferredProjects');
 		for (const owned of [first, second]) {
-			const members = (await (await request(`/api/projects/${owned.id}/members`)).json()).members as ProjectMember[];
-			expect(members).toEqual([expect.objectContaining({ id: ownerId, role: 'owner' })]);
+			expect((await request(`/api/projects/${owned.id}/newsletters`, 'GET', undefined, memberCookie)).status).toBe(200);
 			expect((await fixture.pool.query('SELECT created_by FROM projects WHERE id = $1', [owned.id])).rows[0].created_by).toBeNull();
 		}
-		expect((await fixture.pool.query('SELECT user_id FROM project_members WHERE user_id = $1', [target.id])).rowCount).toBe(0);
 		for (const retained of [saved, editorContent]) {
 			const campaign = (await fixture.pool.query('SELECT content, revision, created_by FROM newsletters WHERE id = $1', [retained.newsletter.id])).rows[0];
 			expect(campaign).toEqual({ content: retained.newsletter, revision: 1, created_by: null });
@@ -191,7 +168,7 @@ describe('user and project-member removal', () => {
 		expect((await fixture.pool.query('SELECT content, mjml, html, created_by FROM newsletter_publications WHERE id = $1', [publicationId])).rows[0]).toEqual({
 			content: saved.newsletter, mjml: first.template, html: saved.html, created_by: null
 		});
-		expect((await request(`/api/projects/${first.id}`, 'PATCH', { ...first, name: 'Transferred project' })).status).toBe(200);
+		expect((await request(`/api/projects/${first.id}`, 'PATCH', { ...first, name: 'Preserved project' }, memberCookie)).status).toBe(200);
 	});
 
 	it('serializes account deletion with active author writes without deadlocks or lost content', async () => {
@@ -217,10 +194,10 @@ describe('user and project-member removal', () => {
 		if (!deletion) throw new Error('Expected a queued account deletion.');
 		expect((await deletion).status, fixture.appLogs.join('\n')).toBe(200);
 		expect((await fixture.pool.query('SELECT content, created_by FROM newsletters WHERE id = $1', [newsletter.id])).rows[0]).toEqual({ content: newsletter, created_by: null });
-		expect((await request(`/api/projects/${owned.id}/members`)).status).toBe(200);
+		expect((await request(`/api/projects/${owned.id}/newsletters`, 'GET', undefined, memberCookie)).status).toBe(200);
 	});
 
-	it('allows only one of two concurrent administrator deletions and leaves both projects with an owner', async () => {
+	it('allows only one of two concurrent administrator deletions and preserves both newsletters', async () => {
 		const first = await account('concurrent-first@example.test', true);
 		const second = await account('concurrent-second@example.test', true);
 		const firstProject = await project(first.cookie);
@@ -234,7 +211,7 @@ describe('user and project-member removal', () => {
 		const surviving = await fixture.pool.query<{ user_id: string }>('SELECT user_id FROM application_admins WHERE user_id = ANY($1::text[])', [[first.id, second.id]]);
 		expect(surviving.rowCount).toBe(1);
 		for (const owned of [firstProject, secondProject]) {
-			expect((await fixture.pool.query("SELECT user_id FROM project_members WHERE project_id = $1 AND role = 'owner'", [owned.id])).rows).toEqual([{ user_id: surviving.rows[0].user_id }]);
+			expect((await request(`/api/projects/${owned.id}/newsletters`, 'GET', undefined, memberCookie)).status).toBe(200);
 		}
 		expect((await fixture.pool.query('SELECT user_id FROM application_admins WHERE user_id = $1', [ownerId])).rowCount).toBe(1);
 	});

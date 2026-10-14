@@ -12,7 +12,7 @@
 	import { cloneNewsletter, composeNewsletter, createItem, createNewsletter, parseNewsletter, serializeNewsletter, type Newsletter } from '#lib/newsletters.js';
 	import { readSource } from '#lib/files.js';
 	import { uploadImages, type ImageUploadResult } from '#lib/image-uploads.js';
-	import { DEFAULT_ITEM_SNIPPET, MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type ProjectMember, type RemoteProject } from '#lib/remote.js';
+	import { DEFAULT_ITEM_SNIPPET, MAX_IMAGE_BYTES, UUID_PATTERN, type ImageAsset, type RemoteProject } from '#lib/remote.js';
 	import { templateFields } from '#lib/template-fields.js';
 	import { DEFAULT_USER_PREFERENCES, type EditorLayout, type UserPreferences } from '#lib/user-preferences.js';
 	import { EMPTY_UTM, UTM_KEYS } from '#lib/utm.js';
@@ -38,10 +38,6 @@
 		drafts: Draft[];
 		activeId: string | null;
 		assets: ImageAsset[];
-		members: ProjectMember[] | null;
-		membersLoading: boolean;
-		addingMember: boolean;
-		removingMemberId: string | null;
 		templateSaving: boolean;
 		nameSaving: boolean;
 		projectDeleting: boolean;
@@ -57,7 +53,7 @@
 		testRecipientsSaving: boolean;
 		testEmailSending: boolean;
 	}
-	type Mode = 'editions' | 'templates' | 'project-images' | 'sharing' | 'project-settings'
+	type Mode = 'editions' | 'templates' | 'project-images' | 'project-settings'
 		| 'content' | 'edition-settings' | 'edition-images' | 'edition-publish';
 
 	let { data }: { data: PageData } = $props();
@@ -73,7 +69,6 @@
 	let newEdition = $state(false);
 	let editionName = $state('');
 	let cloneSourceId = $state<string | null>(null);
-	let memberEmail = $state('');
 	let editorLayout = $state<EditorLayout>(DEFAULT_USER_PREFERENCES.editorLayout);
 	let layoutSaving = $state(false);
 	let signingOut = $state(false);
@@ -158,7 +153,6 @@
 		projectId = id;
 		newEdition = false;
 		cloneSourceId = null;
-		memberEmail = '';
 		if (contexts[id]) { loading = false; mode = contexts[id].project.deletionPending ? 'project-settings' : 'editions'; return; }
 		loading = true;
 		try {
@@ -179,7 +173,6 @@
 				})),
 				activeId: null,
 				assets: images.assets,
-				members: null, membersLoading: false, addingMember: false, removingMemberId: null,
 				nameSaving: false, projectDeleting: false, deleteConfirmation: '',
 				templateSaving: false, uploading: false, libraryUploadTotal: 0, libraryUploads: [],
 				libraryUploadDestination: '',
@@ -478,50 +471,6 @@
 		finally { current.deletingAssetId = null; }
 	}
 
-	async function loadMembers() {
-		const current = context;
-		if (!current || current.membersLoading || current.addingMember || current.removingMemberId !== null) return;
-		current.membersLoading = true;
-		try {
-			const result = await requestJson<{ members: ProjectMember[] }>(`/api/projects/${current.project.id}/members`);
-			current.members = result.members;
-		} catch (cause) { toasts.error(message(cause)); }
-		finally { current.membersLoading = false; }
-	}
-
-	function openSharing() {
-		mode = 'sharing';
-		void loadMembers();
-	}
-
-	async function addMember(event: SubmitEvent) {
-		event.preventDefault();
-		const current = context;
-		if (!current || current.addingMember || current.membersLoading || current.removingMemberId !== null) return;
-		const email = memberEmail;
-		current.addingMember = true;
-		try {
-			const result = await requestJson<{ members: ProjectMember[]; message: string }>(`/api/projects/${current.project.id}/members`, jsonRequest('POST', { email }));
-			current.members = result.members;
-			toasts.success(result.message);
-			if (context === current && memberEmail === email) memberEmail = '';
-		} catch (cause) { toasts.error(message(cause)); }
-		finally { current.addingMember = false; }
-	}
-
-	async function removeMember(member: ProjectMember) {
-		const current = context;
-		if (!current || current.membersLoading || current.addingMember || current.removingMemberId !== null) return;
-		if (!window.confirm(`Remove ${member.name} (${member.email}) from ${current.project.name}? They will lose access to this newsletter's campaigns, templates, and images. Their account and existing content will be kept.`)) return;
-		current.removingMemberId = member.id;
-		try {
-			const result = await requestJson<{ members: ProjectMember[]; message: string }>(`/api/projects/${current.project.id}/members/${encodeURIComponent(member.id)}`, { method: 'DELETE' });
-			current.members = result.members;
-			toasts.success(result.message);
-		} catch (cause) { toasts.error(message(cause)); }
-		finally { current.removingMemberId = null; }
-	}
-
 	async function copyPermalink(id: string) {
 		const current = context;
 		const entry = current?.drafts.find((entry) => entry.newsletter.id === id);
@@ -604,10 +553,10 @@
 		event.preventDefault();
 		const current = context;
 		if (!current || current.projectDeleting) return;
-		if (current.project.role !== 'owner') { toasts.error('Only the newsletter owner can delete this newsletter.'); return; }
+		if (!data.isAdmin) { toasts.error('Only administrators can delete newsletters.'); return; }
 		if (current.deleteConfirmation !== current.project.name) { toasts.error('Type the exact saved newsletter name to confirm deletion.'); return; }
 		if (current.nameSaving || current.templateSaving || current.uploading || current.deletingAssetId !== null || current.deletingEditionId !== null
-			|| current.testRecipientsSaving || current.testEmailSending || current.membersLoading || current.addingMember || current.removingMemberId !== null || current.drafts.some((entry) => entry.saving)) {
+			|| current.testRecipientsSaving || current.testEmailSending || current.drafts.some((entry) => entry.saving)) {
 			toasts.error('Wait for the current newsletter operation before deleting.');
 			return;
 		}
@@ -640,17 +589,6 @@
 				}
 			} catch (refreshCause) { toasts.error(`Deletion status could not be refreshed. ${message(refreshCause)}`); }
 		} finally { current.projectDeleting = false; }
-	}
-
-	async function reloadProject() {
-		if (currentDeletion || context?.projectDeleting || context?.nameSaving || context?.testRecipientsSaving) { toasts.error('Wait for the current newsletter operation before reloading.'); return; }
-		if (unsaved && !window.confirm('Export any drafts you want to keep. Reloading discards unsaved changes in the selected newsletter. Continue?')) return;
-		try {
-			const result = await requestJson<{ projects: RemoteProject[] }>('/api/projects');
-			projects = result.projects;
-			delete contexts[projectId];
-			await selectProject(projectId);
-		} catch (cause) { toasts.error(message(cause)); }
 	}
 
 	async function logout() {
@@ -715,7 +653,7 @@
 			{/if}
 			{#if loading}<p role="status">Loading newsletter…</p>
 			{:else if !context}
-				<section class="panel empty-state"><h2>A place for every newsletter.</h2><p>Create a newsletter to start with a ready-to-use MJML template, or import your own template afterwards.</p><button class="primary" onclick={() => newProject = true}>Create your first newsletter</button>{#if selected}<button class="secondary" onclick={reloadProject}>Reload newsletter</button>{/if}</section>
+				<section class="panel empty-state"><h2>A place for every newsletter.</h2><p>Create a newsletter to start with a ready-to-use MJML template, or import your own template afterwards.</p><button class="primary" onclick={() => newProject = true}>Create your first newsletter</button></section>
 			{:else}
 				<fieldset class="project-content" disabled={context.projectDeleting}>
 				{#if newEdition}<form class="inline-form panel" onsubmit={createEdition}><label for="edition-name">{cloneSourceId ? 'Cloned campaign name' : 'Campaign name'}</label><input id="edition-name" bind:value={editionName} maxlength="160" required /><button class="primary" disabled={!editionName.trim()}>{cloneSourceId ? 'Clone campaign' : 'Create campaign'}</button><button class="secondary" type="button" onclick={() => { newEdition = false; cloneSourceId = null; }}>Cancel</button></form>{/if}
@@ -730,11 +668,10 @@
 						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}><TabIcon name="editions" />Campaigns ({context.drafts.length})</button>
 						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}><TabIcon name="templates" />Templates</button>
 						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}><TabIcon name="image" />Newsletter images ({context.assets.length})</button>
-						<button class:active={mode === 'sharing'} onclick={openSharing}><TabIcon name="sharing" />Sharing</button>
 						{/if}
 						<button class:active={mode === 'project-settings'} onclick={() => mode = 'project-settings'}><TabIcon name="settings" />Project settings</button>
 					{/if}
-				</WorkspaceTabs><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.nameSaving || context.testRecipientsSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload newsletter</button>{#if !editionView && !context.project.deletionPending}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
+				</WorkspaceTabs>{#if !editionView && !context.project.deletionPending}<div class="save-actions"><button class="primary" onclick={() => beginEdition()}>+ New campaign</button></div>{/if}</div>
 				{#if mode === 'editions'}
 					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.testEmailSending || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
 				{:else if mode === 'project-settings'}
@@ -746,54 +683,27 @@
 							<form onsubmit={saveProjectName}>
 								<label for="settings-project-name">Newsletter name</label>
 								<input id="settings-project-name" bind:value={context.name} maxlength="160" required disabled={context.nameSaving || context.templateSaving} />
-								<p>Any newsletter member can change the name. Saving it does not save or discard template or campaign drafts.</p>
+								<p>Any signed-in user can change the name. Saving it does not save or discard template or campaign drafts.</p>
 								<button class="primary" disabled={!nameDirty || !context.name.trim() || context.nameSaving || context.templateSaving}>{context.nameSaving ? 'Saving...' : 'Save newsletter name'}</button>
 							</form>
 							<form onsubmit={saveTestRecipients}>
 								<label for="project-test-recipients">Shared test-email recipients</label>
 								<textarea id="project-test-recipients" rows="3" bind:value={context.testRecipients} maxlength={MAX_TEST_RECIPIENTS_LENGTH} disabled={context.testRecipientsSaving || context.testEmailSending} placeholder="person@example.com, colleague@example.com"></textarea>
-								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by all campaigns and members of this newsletter. Each recipient receives a separate message.</p>
+								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list applies to all campaigns in this newsletter and can be edited by any signed-in user. Each recipient receives a separate message.</p>
 								<button class="secondary" disabled={!recipientsDirty || context.testRecipientsSaving || context.testEmailSending}>{context.testRecipientsSaving ? 'Saving recipients...' : 'Save recipients'}</button>
 							</form>
 						{/if}
 						<section class="project-danger" aria-labelledby="delete-project-heading">
 							<h3 id="delete-project-heading">Delete newsletter</h3>
-							{#if context.project.role === 'owner'}
+							{#if data.isAdmin}
 								<p>This cannot be undone. It removes this newsletter for everyone, discards its unsaved changes, disables all campaign HTML links, and permanently deletes its shared and campaign image files. Other newsletters and user accounts are kept.</p>
 								<form onsubmit={deleteProject}>
 									<label for="delete-project-confirmation">Type <strong>{context.project.name}</strong> to confirm</label>
 									<input id="delete-project-confirmation" bind:value={context.deleteConfirmation} autocomplete="off" spellcheck="false" required />
 									<button class="destructive" disabled={context.projectDeleting || context.deleteConfirmation !== context.project.name || context.nameSaving || context.templateSaving || context.testRecipientsSaving || context.testEmailSending || context.uploading || context.deletingAssetId !== null || currentDeletion || context.drafts.some((entry) => entry.saving)}>{context.projectDeleting ? 'Deleting...' : context.project.deletionPending ? 'Retry Delete newsletter' : 'Delete newsletter'}</button>
 								</form>
-							{:else}<p>Only the newsletter owner can delete this newsletter.</p>{/if}
+							{:else}<p>Only administrators can delete newsletters.</p>{/if}
 						</section>
-					</section>
-				{:else if mode === 'sharing'}
-					<section class="panel" aria-labelledby="sharing-heading">
-						<div class="panel-toolbar"><h2 id="sharing-heading">Share this newsletter</h2></div>
-						<div class="member-list">
-							<div class="save-actions"><h3 id="members-heading">People with access{context.members ? ` (${context.members.length})` : ''}</h3><button class="secondary" disabled={context.membersLoading || context.addingMember || context.removingMemberId !== null} onclick={loadMembers}>Refresh members</button></div>
-							{#if context.membersLoading}<p role="status">Loading members…</p>{/if}
-							{#if context.members}
-								<ul aria-labelledby="members-heading">
-									{#each context.members as member (member.id)}
-										<li><div><strong>{member.name}{member.id === data.user?.id ? ' (you)' : ''}</strong><span>{member.email}</span></div><div class="member-actions">
-											<span class="member-role">{member.role === 'owner' ? 'Owner' : 'Editor'}</span>
-											{#if context.project.role === 'owner' && member.role === 'editor'}
-												<button class="secondary remove-member" aria-label={`Remove ${member.email} from newsletter`} disabled={context.membersLoading || context.addingMember || context.removingMemberId !== null} onclick={() => removeMember(member)}>{context.removingMemberId === member.id ? 'Removing...' : 'Remove member'}</button>
-											{/if}
-										</div></li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-						<form class="member-form" onsubmit={addMember}>
-							<p>Anyone with access to this newsletter can share it with others. Add an existing user by email to grant editor access to all campaigns, templates, and images in this newsletter. Editors can also share the newsletter.</p>
-							<p>The recipient needs an account first. Ask an administrator to invite them if they do not have one.</p>
-							<p>Only the newsletter owner can remove editors. Removing newsletter access does not delete their account or existing content.</p>
-							<label for="member-email">Member email</label><input id="member-email" type="email" bind:value={memberEmail} required />
-							<button class="secondary" disabled={context.addingMember || context.membersLoading || context.removingMemberId !== null || !memberEmail.trim()}>{context.addingMember ? 'Adding…' : 'Add member'}</button>
-						</form>
 					</section>
 				{:else if mode === 'edition-publish' && draft}
 					<section class="panel library" aria-labelledby="publish-heading">
@@ -864,7 +774,7 @@
 				{:else}
 					<div class="editor-grid">
 						<section class="panel editor-panel" aria-label={mode === 'templates' ? 'Newsletter templates' : 'Newsletter editor'}>
-							<div class="panel-toolbar"><h2>{mode === 'templates' ? 'Newsletter templates' : 'Newsletter content'}</h2><small>{context.project.role === 'owner' ? 'Owner' : 'Editor'}</small></div>
+							<div class="panel-toolbar"><h2>{mode === 'templates' ? 'Newsletter templates' : 'Newsletter content'}</h2></div>
 								<form class="template-form" onsubmit={saveTemplates}>
 									<label for="project-template">Template MJML</label><textarea id="project-template" bind:value={context.template} rows="12" spellcheck="false"></textarea>
 									<p>Place exactly one <code>{'{{items}}'}</code> inside mj-body. Use <code>{'{{newsletter_name}}'}</code> for the campaign name. Typed tags such as <code>{'{{text:headline}}'}</code> create newsletter-level fields.</p>
@@ -914,25 +824,12 @@
 	.editor-panel { min-width: 0; }
 	.panel-toolbar { display: flex; align-items: center; justify-content: space-between; height: 58px; padding: 14px 18px; border-bottom: 1px solid var(--ui-border, #e1e8d8); }
 	.panel-toolbar h2 { font: 600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
-	.panel-toolbar small { font-size: 10px; color: var(--ui-muted, #899779); }
-	.template-form, .member-form { padding: 20px; }
-	.template-form label, .member-form label { display: block; font-size: 11px; font-weight: 600; color: var(--ui-text, #5e7450); margin: 12px 0 8px; }
-	.template-form input, .template-form textarea, .member-form input { width: 100%; }
+	.template-form { padding: 20px; }
+	.template-form label { display: block; font-size: 11px; font-weight: 600; color: var(--ui-text, #5e7450); margin: 12px 0 8px; }
+	.template-form input, .template-form textarea { width: 100%; }
 	.template-form textarea { resize: vertical; font-family: monospace; line-height: 1.7; }
-	.template-form p, .member-form p { font-size: 10px; }
+	.template-form p { font-size: 10px; }
 	.template-form .save-actions { margin-top: 22px; }
-	.member-form { max-width: 640px; }
-	.member-form button { margin-top: 14px; }
-	.member-list { padding: 20px; }
-	.member-list h3 { margin: 0; font-size: 12px; }
-	.member-list ul { list-style: none; margin: 16px 0 0; padding: 0; }
-	.member-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--ui-border, #e1e8d8); overflow-wrap: anywhere; }
-	.member-list li > div { min-width: 0; }
-	.member-list strong, .member-list span { display: block; font-size: 12px; }
-	.member-list span { color: var(--ui-muted, #78886b); line-height: 1.8; }
-	.member-role { flex-shrink: 0; }
-	.member-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-	.remove-member { color: #9b4335; }
 	.notice { padding: 12px 15px; border-radius: 5px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 	.utm-form { max-width: 640px; }
 	.utm-form input { width: 100%; }

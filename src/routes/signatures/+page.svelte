@@ -76,7 +76,7 @@
 			</form>
 		{:else if data.selected}
 			{#key data.selected.id}
-				<SignatureEditor initial={data.selected} onDirtyChange={(value) => editorDirty = value} onSaved={invalidateAll} onDeleted={async () => { editorDirty = false; await goto('/signatures', { invalidateAll: true }); }} />
+				<SignatureEditor initial={data.selected} canDelete={data.isAdmin} onDirtyChange={(value) => editorDirty = value} onSaved={invalidateAll} onDeleted={async () => { editorDirty = false; await goto('/signatures', { invalidateAll: true }); }} />
 			{/key}
 		{:else}
 			<section class="panel empty-state">

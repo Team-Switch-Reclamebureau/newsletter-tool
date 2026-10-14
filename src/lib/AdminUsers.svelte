@@ -40,12 +40,12 @@
 	}
 
 	function removeUser(user: AdminUser) {
-		if (!window.confirm(`Permanently delete the account for ${user.name} (${user.email})? All sessions and newsletter access will be revoked. Any newsletters they own will transfer to you. Existing campaigns, newsletter templates, and images will be kept. Their private email signatures, variations, and contacts will be permanently deleted. This cannot be undone.`)) return;
-		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'DELETE', {}, 'User deleted. Owned newsletters were transferred to you; newsletter content was preserved. Private signatures and contacts were deleted.');
+		if (!window.confirm(`Permanently delete the account for ${user.name} (${user.email})? All their sessions will be revoked. All newsletters, campaigns, templates, images, signatures, variations, and contacts will be kept. This cannot be undone.`)) return;
+		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'DELETE', {}, 'User deleted. All workspace content was preserved.');
 	}
 </script>
 
-<p>Invite users to choose their own password. Newsletter access is granted separately from each newsletter's Sharing tab.</p>
+<p>All signed-in users can access and edit every newsletter and signature. Only administrators can delete whole newsletters or signatures. Invite users to choose their own password.</p>
 <form onsubmit={invite}>
 	<fieldset disabled={busy}>
 		<label for="invite-name">Name</label><input id="invite-name" bind:value={name} maxlength="80" required />

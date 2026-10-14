@@ -2,13 +2,13 @@ import { error } from '@sveltejs/kit';
 import type { Pool, PoolClient } from 'pg';
 import { parseNewsletter, templateValuesError, validHttpUrl, type Newsletter } from '../newsletters';
 import { templateFields } from '../template-fields';
-import { DEFAULT_TEMPLATE, MAX_TEMPLATE_BYTES, UUID_PATTERN, imageAssetUrl, type ImageAsset, type ProjectMember, type RemoteProject } from '../remote';
+import { DEFAULT_TEMPLATE, MAX_TEMPLATE_BYTES, UUID_PATTERN, imageAssetUrl, type ImageAsset, type RemoteProject } from '../remote';
 import { validateSource } from './render';
 
 type Database = Pool | PoolClient;
 interface ProjectRow {
 	id: string; name: string; template: string; item_template: string | null;
-	revision: number; role: RemoteProject['role'];
+	revision: number;
 	deleted_at: Date | null; deletion_completed_at: Date | null;
 }
 interface AssetRow {
@@ -21,39 +21,32 @@ export interface NewsletterRow {
 }
 
 export function projectFromRow(row: ProjectRow): RemoteProject {
-	return { id: row.id, name: row.name, template: row.template, itemTemplate: row.item_template, revision: row.revision, role: row.role, deletionPending: row.deleted_at !== null && row.deletion_completed_at === null };
+	return { id: row.id, name: row.name, template: row.template, itemTemplate: row.item_template, revision: row.revision, deletionPending: row.deleted_at !== null && row.deletion_completed_at === null };
 }
 
 export async function listProjects(database: Database, userId: string) {
 	const result = await database.query<ProjectRow>(`
-		SELECT p.*, m.role FROM projects p JOIN project_members m ON m.project_id = p.id
-		WHERE m.user_id = $1 AND (p.deleted_at IS NULL OR (p.deletion_completed_at IS NULL AND m.role = 'owner'))
+		SELECT p.* FROM projects p
+		WHERE p.deleted_at IS NULL OR (
+			p.deletion_completed_at IS NULL AND EXISTS (SELECT 1 FROM application_admins WHERE user_id = $1)
+		)
 		ORDER BY p.name, p.id`, [userId]);
 	return result.rows.map(projectFromRow);
 }
 
 export async function requireProject(database: Database, projectId: string, userId: string, lock = false, includeDeleted = false) {
 	if (lock) {
-		// Match account-deletion lock order, then recheck membership after waiting for the project.
 		if (!(await database.query('SELECT id FROM "user" WHERE id = $1 FOR KEY SHARE', [userId])).rowCount) error(401, 'Sign in to access this workspace.');
 		await database.query('SELECT id FROM projects WHERE id = $1 FOR NO KEY UPDATE', [projectId]);
 	}
 	const result = await database.query<ProjectRow>(`
-		SELECT p.*, m.role FROM projects p JOIN project_members m ON m.project_id = p.id
-		WHERE p.id = $1 AND m.user_id = $2 AND (
-			p.deleted_at IS NULL OR $3 OR ($4 AND p.deletion_completed_at IS NULL AND m.role = 'owner')
+		SELECT p.* FROM projects p
+		WHERE p.id = $1 AND (
+			p.deleted_at IS NULL OR $3 OR ($4 AND p.deletion_completed_at IS NULL
+				AND EXISTS (SELECT 1 FROM application_admins WHERE user_id = $2))
 		)`, [projectId, userId, includeDeleted, !lock]);
-	if (!result.rows[0]) error(404, 'Project not found or access was not granted.');
+	if (!result.rows[0]) error(404, 'Newsletter not found.');
 	return projectFromRow(result.rows[0]);
-}
-
-export async function listProjectMembers(database: Database, projectId: string): Promise<ProjectMember[]> {
-	const result = await database.query<ProjectMember>(`
-		SELECT u.id, u.name, u.email, m.role
-		FROM project_members m JOIN "user" u ON u.id = m.user_id
-		WHERE m.project_id = $1
-		ORDER BY CASE WHEN m.role = 'owner' THEN 0 ELSE 1 END, lower(u.name), lower(u.email), u.id`, [projectId]);
-	return result.rows;
 }
 
 export function projectName(value: unknown) {

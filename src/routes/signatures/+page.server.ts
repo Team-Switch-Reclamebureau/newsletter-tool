@@ -11,7 +11,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!runtime) error(503, 'Configure the hosted workspace first.');
 	const [projects, signatures] = await Promise.all([
 		listProjects(runtime.pool, locals.user.id),
-		listSignatures(runtime.pool, locals.user.id)
+		listSignatures(runtime.pool)
 	]);
 	const id = url.searchParams.get('signature');
 	const selected = id ? await signatureDetail(runtime.pool, await requireSignature(runtime.pool, uuid(id), locals.user.id)) : null;

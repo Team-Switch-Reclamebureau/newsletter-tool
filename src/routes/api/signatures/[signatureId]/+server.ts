@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { api, readJson, requireUser, revision, uuid } from '#lib/server/http.js';
+import { api, readJson, requireAdmin, requireUser, revision, uuid } from '#lib/server/http.js';
 import { mutateSignature, requireSignature, signatureDetail, signatureName } from '#lib/server/signatures.js';
 import { transaction } from '#lib/server/workspace.js';
 
@@ -20,11 +20,12 @@ export const PATCH = api(async (event) => {
 });
 
 export const DELETE = api(async (event) => {
-	const { pool, user } = requireUser(event);
+	const { pool, user } = requireAdmin(event);
 	const body = await readJson(event.request);
 	const expected = revision(body.revision);
 	await transaction(pool, async (client) => {
 		const signature = await requireSignature(client, uuid(event.params.signatureId), user.id, true);
+		if (!(await client.query('SELECT user_id FROM application_admins WHERE user_id = $1', [user.id])).rowCount) error(403, 'Only administrators can delete signatures.');
 		if (signature.revision !== expected) error(409, 'This signature changed since you loaded it. Reload before deleting.');
 		if (body.confirmName !== signature.name) error(400, 'Type the exact saved signature name to confirm deletion.');
 		await client.query('DELETE FROM email_signatures WHERE id = $1', [signature.id]);

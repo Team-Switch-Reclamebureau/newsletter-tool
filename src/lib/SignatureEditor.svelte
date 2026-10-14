@@ -7,8 +7,9 @@
 	import WorkspaceTabs from './WorkspaceTabs.svelte';
 	import TabIcon from './TabIcon.svelte';
 
-	let { initial, onDirtyChange, onSaved, onDeleted }: {
+	let { initial, canDelete, onDirtyChange, onSaved, onDeleted }: {
 		initial: SignatureDetail;
+		canDelete: boolean;
 		onDirtyChange: (dirty: boolean) => void;
 		onSaved: () => Promise<void>;
 		onDeleted: () => Promise<void>;
@@ -16,7 +17,7 @@
 	const toasts = useToasts();
 	const tabs = [
 		{ id: 'variations', label: 'HTML variations', icon: 'templates' },
-		{ id: 'contacts', label: 'Contacts', icon: 'sharing' },
+		{ id: 'contacts', label: 'Contacts', icon: 'contacts' },
 		{ id: 'export', label: 'Preview & export', icon: 'publish' },
 		{ id: 'settings', label: 'Settings', icon: 'settings' }
 	] as const;
@@ -200,22 +201,9 @@
 		finally { busy = false; }
 	}
 
-	async function reload() {
-		if (busy || (dirty && !window.confirm('Reload and discard all unsaved signature changes?'))) return;
-		busy = true;
-		try {
-			signature = (await requestJson<{ signature: SignatureDetail }>(base)).signature;
-			name = signature.name;
-			contactEditing = false;
-			variationId = null;
-			selectedContacts = signature.contacts.map((contact) => contact.id);
-			await onSaved();
-		} catch (cause) { toasts.error(message(cause)); }
-		finally { busy = false; }
-	}
-
 	async function deleteSignature(event: SubmitEvent) {
 		event.preventDefault();
+		if (!canDelete) { toasts.error('Only administrators can delete signatures.'); return; }
 		if (busy || !window.confirm(`Permanently delete "${signature.name}", all its HTML variations, and all its contacts?`)) return;
 		busy = true;
 		try {
@@ -244,7 +232,6 @@
 			<button class:active={tab === item.id} disabled={busy} onclick={() => tab = item.id}><TabIcon name={item.icon} />{item.label}</button>
 		{/each}
 	</WorkspaceTabs>
-	<button class="secondary" disabled={busy} onclick={reload}>Reload signature</button>
 </div>
 
 <fieldset disabled={busy}>
@@ -319,13 +306,13 @@
 	{:else}
 		<section class="panel library">
 			<h2>Signature settings</h2>
-			<p>Signatures are private to your account, separate from newsletter access. Deleting your account also deletes its signatures and contacts.</p>
+			<p>All signed-in users can view and edit this signature, its variations, and its contacts. Deleting a user account does not delete workspace content.</p>
 			<form onsubmit={saveName}><label for="edit-signature-name">Signature name</label><input id="edit-signature-name" bind:value={name} maxlength="160" required /><button class="primary" disabled={name === signature.name || !name.trim()}>Save signature name</button></form>
-			<form class="danger-zone" onsubmit={deleteSignature}>
+			{#if canDelete}<form class="danger-zone" onsubmit={deleteSignature}>
 				<h3>Delete signature</h3><p>This permanently deletes this signature, every uploaded variation, and all its contacts. Newsletters and other signatures are kept.</p>
 				<label for="delete-signature-confirmation">Type <strong>{signature.name}</strong> to confirm</label><input id="delete-signature-confirmation" bind:value={deleteConfirmation} autocomplete="off" required />
 				<button class="destructive" disabled={deleteConfirmation !== signature.name}>Delete signature</button>
-			</form>
+			</form>{:else}<p>Only administrators can delete signatures.</p>{/if}
 		</section>
 	{/if}
 </fieldset>

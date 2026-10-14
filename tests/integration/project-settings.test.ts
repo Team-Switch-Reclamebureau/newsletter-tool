@@ -26,14 +26,10 @@ async function login(email: string) {
 	return response.headers.getSetCookie().map((cookie) => cookie.split(';')[0]).join('; ');
 }
 
-async function project(name = 'Project settings test') {
-	const response = await request('/api/projects', 'POST', { name });
+async function project(name = 'Project settings test', cookie = ownerCookie) {
+	const response = await request('/api/projects', 'POST', { name }, cookie);
 	expect(response.status).toBe(201);
 	return (await response.json()).project as RemoteProject;
-}
-
-async function share(id: string) {
-	expect((await request(`/api/projects/${id}/members`, 'POST', { email: 'member@example.test' })).status).toBe(200);
 }
 
 async function upload(id: string, newsletterId?: string) {
@@ -67,12 +63,10 @@ describe('project settings and deletion', () => {
 		expect(footer?.replace(/<!--[\s\S]*?-->/g, '')).toBe(`Team Switch © 2026 · v${appVersion}`);
 	});
 
-	it('allows members to rename independently of templates and recipients, validating access and revisions', async () => {
+	it('allows all signed-in users to rename independently of templates and recipients, validating revisions', async () => {
 		const saved = await project();
-		await share(saved.id);
 		const path = `/api/projects/${saved.id}/settings`;
 		expect((await request(path, 'PATCH', { name: 'Renamed', revision: 1 }, '')).status).toBe(401);
-		expect((await request(path, 'PATCH', { name: 'Renamed', revision: 1 }, outsiderCookie)).status).toBe(404);
 		expect((await request(path, 'PATCH', { name: 'Renamed', revision: 1 }, ownerCookie, 'https://wrong.test')).status).toBe(403);
 		for (const body of [{}, { name: '', revision: 1 }, { name: 1, revision: 1 }, { name: 'x'.repeat(161), revision: 1 }, { name: 'Renamed', revision: 1, template: 'Must not save' }]) {
 			expect((await request(path, 'PATCH', body)).status).toBe(400);
@@ -80,22 +74,22 @@ describe('project settings and deletion', () => {
 		expect((await request(`/api/projects/${saved.id}/test-recipients`, 'PATCH', { recipients: 'shared@example.test', revision: 1 })).status).toBe(200);
 		const response = await request(path, 'PATCH', { name: '  Renamed project  ', revision: 1 }, memberCookie);
 		expect(response.status).toBe(200);
-		expect((await response.json()).project).toEqual({ ...saved, name: 'Renamed project', revision: 2, role: 'editor' });
+		expect((await response.json()).project).toEqual({ ...saved, name: 'Renamed project', revision: 2 });
 		expect((await request(path, 'PATCH', { name: 'Stale', revision: 1 })).status).toBe(409);
 		expect((await request(`/api/projects/${saved.id}`, 'PATCH', { ...saved, itemTemplate: saved.itemTemplate })).status).toBe(409);
 		expect((await fixture.pool.query('SELECT name, template, item_template, revision FROM projects WHERE id = $1', [saved.id])).rows[0]).toEqual({
 			name: 'Renamed project', template: saved.template, item_template: saved.itemTemplate, revision: 2
 		});
 		expect((await (await request(`/api/projects/${saved.id}/test-recipients`)).json()).settings).toEqual({ recipients: ['shared@example.test'], revision: 2 });
+		expect((await request(path, 'PATCH', { name: 'Another user renamed this', revision: 2 }, outsiderCookie)).status).toBe(200);
 	});
 
-	it('requires the owner, trusted origin, current revision, and exact saved name to delete', async () => {
-		const saved = await project('Exact Project Name');
-		await share(saved.id);
+	it('requires an administrator, trusted origin, current revision, and exact saved name to delete even a regular user-created newsletter', async () => {
+		const saved = await project('Exact Project Name', memberCookie);
 		const path = `/api/projects/${saved.id}`;
 		const body = { confirmName: saved.name, revision: 1 };
 		expect((await request(path, 'DELETE', body, '')).status).toBe(401);
-		expect((await request(path, 'DELETE', body, outsiderCookie)).status).toBe(404);
+		expect((await request(path, 'DELETE', body, outsiderCookie)).status).toBe(403);
 		expect((await request(path, 'DELETE', body, memberCookie)).status).toBe(403);
 		expect((await request(path, 'DELETE', body, ownerCookie, 'https://wrong.test')).status).toBe(403);
 		for (const invalid of [{ revision: 1 }, { ...body, confirmName: saved.name.toLowerCase() }, { ...body, confirmName: ` ${saved.name}` }, { ...body, confirmed: true }]) {
@@ -103,12 +97,12 @@ describe('project settings and deletion', () => {
 		}
 		expect((await request(path, 'DELETE', { ...body, revision: 2 })).status).toBe(409);
 		expect((await fixture.pool.query('SELECT deleted_at FROM projects WHERE id = $1', [saved.id])).rows[0].deleted_at).toBeNull();
+		expect((await deletion(saved)).status).toBe(200);
 	});
 
 	it('removes all campaigns, clone/shared image files, access, and export links without affecting other projects or accounts', async () => {
 		const saved = await project('Deleted project');
 		const other = await project('Keep this project');
-		await share(saved.id);
 		const first = createNewsletter('First campaign');
 		expect((await request(`/api/projects/${saved.id}/newsletters`, 'POST', { newsletter: first })).status).toBe(201);
 		const shared = await upload(saved.id);
@@ -140,9 +134,8 @@ describe('project settings and deletion', () => {
 		expect((await deletion(saved)).status).toBe(200);
 	});
 
-	it('keeps a failed cleanup visible only to owners and supports retry after a browser reload', async () => {
+	it('keeps a failed cleanup visible only to administrators and supports retry after a browser reload', async () => {
 		const saved = await project('Retry cleanup');
-		await share(saved.id);
 		const asset = await upload(saved.id);
 		const file = join(fixture.directory, 'uploads', `${asset.id}.webp`);
 		const backup = `${file}.backup`;

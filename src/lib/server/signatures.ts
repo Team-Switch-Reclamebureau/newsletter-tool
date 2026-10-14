@@ -12,13 +12,14 @@ export function signatureName(value: unknown): string {
 	return value.trim();
 }
 
-export async function listSignatures(database: Database, userId: string): Promise<EmailSignature[]> {
-	return (await database.query<EmailSignature>('SELECT id, name, revision FROM email_signatures WHERE user_id = $1 ORDER BY lower(name), id', [userId])).rows;
+export async function listSignatures(database: Database): Promise<EmailSignature[]> {
+	return (await database.query<EmailSignature>('SELECT id, name, revision FROM email_signatures ORDER BY lower(name), id')).rows;
 }
 
 export async function requireSignature(database: Database, id: string, userId: string, lock = false): Promise<EmailSignature> {
-	const result = await database.query<EmailSignature>(`SELECT id, name, revision FROM email_signatures WHERE id = $1 AND user_id = $2${lock ? ' FOR UPDATE' : ''}`, [id, userId]);
-	if (!result.rows[0]) error(404, 'Signature not found or access was not granted.');
+	if (lock && !(await database.query('SELECT id FROM "user" WHERE id = $1 FOR KEY SHARE', [userId])).rowCount) error(401, 'Sign in to access this workspace.');
+	const result = await database.query<EmailSignature>(`SELECT id, name, revision FROM email_signatures WHERE id = $1${lock ? ' FOR UPDATE' : ''}`, [id]);
+	if (!result.rows[0]) error(404, 'Signature not found.');
 	return result.rows[0];
 }
 

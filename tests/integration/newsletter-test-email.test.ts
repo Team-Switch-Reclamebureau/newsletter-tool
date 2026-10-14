@@ -79,7 +79,6 @@ beforeAll(async () => {
 		name: 'Newsletter tests', template: DEFAULT_TEMPLATE.replace('{{items}}', '<mj-section><mj-column><mj-text>Saved template note</mj-text></mj-column></mj-section>{{items}}'),
 		itemTemplate: DEFAULT_ITEM_SNIPPET
 	})).json()).project;
-	expect((await request(`/api/projects/${project.id}/members`, 'POST', { email: 'member@example.test' })).status).toBe(200);
 	newsletter = createNewsletter('Saved October edition');
 	newsletter.items = [{ ...createItem(), fields: { title: 'Saved newsletter title', text: 'Saved newsletter body', url: 'https://example.test/story?existing=1#fragment', button: 'Read saved story' } }];
 	newsletter.utm.utm_source = 'newsletter-test';
@@ -110,9 +109,9 @@ afterAll(async () => {
 });
 
 describe('saved newsletter test emails through PostgreSQL and real SMTP', () => {
-	it('persists a shared project list and protects concurrent edits and project access', async () => {
+	it('persists recipients for all users and protects concurrent edits and authenticated access', async () => {
 		expect((await request(recipientsPath(), 'GET', undefined, '')).status).toBe(401);
-		expect((await request(recipientsPath(), 'GET', undefined, outsiderCookie)).status).toBe(404);
+		expect((await request(recipientsPath(), 'GET', undefined, outsiderCookie)).status).toBe(200);
 		expect((await (await request(recipientsPath())).json()).settings).toEqual({ recipients: [], revision: 1 });
 		expect((await request(recipientsPath(), 'PATCH', { recipients: 'alice@example.test', revision: 1 }, ownerCookie, 'https://wrong.test')).status).toBe(403);
 		const saved = await saveRecipients('ALICE@example.test, bob@example.test, alice@example.test');
@@ -214,7 +213,6 @@ describe('saved newsletter test emails through PostgreSQL and real SMTP', () => 
 	it('rejects unauthenticated, cross-origin, foreign and deleted editions', async () => {
 		await saveRecipients('alice@example.test');
 		expect((await sendTest(newsletter.id, '')).status).toBe(401);
-		expect((await sendTest(newsletter.id, outsiderCookie)).status).toBe(404);
 		expect((await sendTest(newsletter.id, ownerCookie, 'https://wrong.test')).status).toBe(403);
 		expect((await sendTest(otherNewsletterId)).status).toBe(404);
 		expect((await sendTest(crypto.randomUUID())).status).toBe(404);
@@ -222,6 +220,8 @@ describe('saved newsletter test emails through PostgreSQL and real SMTP', () => 
 		try { expect((await sendTest()).status).toBe(404); }
 		finally { await fixture.pool.query('UPDATE newsletters SET deleted_at = NULL WHERE id = $1', [newsletter.id]); }
 		expect(messages).toEqual([]);
+		expect((await sendTest(newsletter.id, outsiderCookie)).status).toBe(200);
+		expect(messages).toHaveLength(1);
 	});
 
 	it('requires reloading before sending when another member changes recipients', async () => {
