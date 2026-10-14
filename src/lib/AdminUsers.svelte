@@ -40,8 +40,8 @@
 	}
 
 	function removeUser(user: AdminUser) {
-		if (!window.confirm(`Permanently delete the account for ${user.name} (${user.email})? All sessions and newsletter access will be revoked. Any newsletters they own will transfer to you. Existing campaigns, templates, and images will be kept. This cannot be undone.`)) return;
-		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'DELETE', {}, 'User deleted. Owned newsletters were transferred to you; existing content was preserved.');
+		if (!window.confirm(`Permanently delete the account for ${user.name} (${user.email})? All sessions and newsletter access will be revoked. Any newsletters they own will transfer to you. Existing campaigns, newsletter templates, and images will be kept. Their private email signatures, variations, and contacts will be permanently deleted. This cannot be undone.`)) return;
+		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'DELETE', {}, 'User deleted. Owned newsletters were transferred to you; newsletter content was preserved. Private signatures and contacts were deleted.');
 	}
 </script>
 

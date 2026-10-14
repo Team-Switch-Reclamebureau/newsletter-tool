@@ -1,5 +1,6 @@
 <script lang="ts">
 	import favicon from '#lib/assets/favicon.svg';
+	import '#lib/workspace.css';
 	import type { LayoutProps } from './$types';
 	import { DEFAULT_APPLICATION_SETTINGS, interfaceTheme } from '#lib/application-settings.js';
 	import { onDestroy } from 'svelte';

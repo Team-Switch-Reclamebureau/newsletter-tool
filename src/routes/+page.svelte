@@ -3,8 +3,8 @@
 	import type { PageData } from './$types';
 	import { version as appVersion } from '../../package.json';
 	import ContentEditor from '#lib/ContentEditor.svelte';
-	import UserMenu from '#lib/UserMenu.svelte';
-	import WorkspaceSidebar from '#lib/WorkspaceSidebar.svelte';
+	import WorkspaceNavigation from '#lib/WorkspaceNavigation.svelte';
+	import WorkspaceTabs from '#lib/WorkspaceTabs.svelte';
 	import TabIcon from '#lib/TabIcon.svelte';
 	import NewsletterPreview from '#lib/NewsletterPreview.svelte';
 	import EditionTable from '#lib/EditionTable.svelte';
@@ -113,8 +113,9 @@
 		|| value.drafts.some((entry) => serializeNewsletter(entry.newsletter) !== entry.snapshot))));
 
 	$effect(() => { projects = data.projects.map((project) => ({ ...project })); });
+	$effect(() => { if (data.creatingProject) newProject = true; });
 	$effect(() => { editorLayout = data.preferences.editorLayout; });
-	$effect(() => { if (data.user && projects.length && !projectId) void selectProject(projects[0].id); });
+	$effect(() => { if (data.user && projects.length && !projectId) void selectProject(projects.find((project) => project.id === data.initialProjectId)?.id ?? projects[0].id); });
 
 	beforeNavigate((navigation) => {
 		if (unsaved && !leaving && !window.confirm('You have unsaved changes. Leave this workspace and discard them?')) navigation.cancel();
@@ -682,15 +683,7 @@
 	</main>
 {:else}
 	<div class="app">
-		<WorkspaceSidebar bind:open={sidebarOpen}>
-			<a href="/" class="brand">{data.settings.applicationName}<span>.</span></a>
-			<div class="project-heading"><span>NEWSLETTERS</span><span>{projects.length}</span></div>
-			<nav aria-label="Newsletters">{#each projects as project (project.id)}<button class:chosen={projectId === project.id} onclick={() => selectProject(project.id)}>▤ <span>{project.name}</span></button>{/each}</nav>
-			<button class="secondary new-project" onclick={() => { newProject = true; sidebarOpen = false; }}>+ New newsletter</button>
-			<div class="sidebar-footer">
-				{#if data.user}<UserMenu name={data.user.name} email={data.user.email} isAdmin={data.isAdmin} {signingOut} onSignOut={logout} />{/if}
-			</div>
-		</WorkspaceSidebar>
+		<WorkspaceNavigation bind:open={sidebarOpen} applicationName={data.settings.applicationName} {projects} signatures={data.signatures} selectedProjectId={projectId} user={data.user} isAdmin={data.isAdmin} {signingOut} onSignOut={logout} onSelectProject={selectProject} onCreateProject={() => { newProject = true; sidebarOpen = false; }} />
 		<main class="workspace">
 			<header class:project-header={!!selected}>
 				<div class="workspace-location">
@@ -726,7 +719,7 @@
 			{:else}
 				<fieldset class="project-content" disabled={context.projectDeleting}>
 				{#if newEdition}<form class="inline-form panel" onsubmit={createEdition}><label for="edition-name">{cloneSourceId ? 'Cloned campaign name' : 'Campaign name'}</label><input id="edition-name" bind:value={editionName} maxlength="160" required /><button class="primary" disabled={!editionName.trim()}>{cloneSourceId ? 'Clone campaign' : 'Create campaign'}</button><button class="secondary" type="button" onclick={() => { newEdition = false; cloneSourceId = null; }}>Cancel</button></form>{/if}
-				<div class="project-tools"><div class="view-tabs" aria-label={editionView ? 'Campaign views' : 'Newsletter views'}>
+				<div class="project-tools"><WorkspaceTabs label={editionView ? 'Campaign views' : 'Newsletter views'}>
 					{#if editionView}
 						<button class:active={mode === 'content'} onclick={() => mode = 'content'}><TabIcon name="content" />Content</button>
 						<button class:active={mode === 'edition-settings'} onclick={() => mode = 'edition-settings'}><TabIcon name="settings" />Settings</button>
@@ -741,7 +734,7 @@
 						{/if}
 						<button class:active={mode === 'project-settings'} onclick={() => mode = 'project-settings'}><TabIcon name="settings" />Project settings</button>
 					{/if}
-				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.nameSaving || context.testRecipientsSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload newsletter</button>{#if !editionView && !context.project.deletionPending}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
+				</WorkspaceTabs><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.nameSaving || context.testRecipientsSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload newsletter</button>{#if !editionView && !context.project.deletionPending}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
 				{#if mode === 'editions'}
 					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.testEmailSending || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
 				{:else if mode === 'project-settings'}
@@ -905,56 +898,18 @@
 	:global(button:disabled) { cursor: default; opacity: .55; }
 	:global(button:focus-visible), :global(a:focus-visible), :global(input:focus-visible), :global(textarea:focus-visible), :global(select:focus-visible) { outline: 2px solid var(--ui-accent, #829e66); outline-offset: 3px; }
 	.brand { display: block; font-size: 27px; font-weight: 750; letter-spacing: -1px; color: var(--ui-base-ink, #425f30); text-decoration: none; margin-bottom: 32px; overflow-wrap: anywhere; }
-	.brand span, h1 span { color: var(--ui-accent, #839e5d); }
-	.eyebrow { font-size: 9px; font-weight: 600; letter-spacing: 1.5px; color: var(--ui-muted, #839273); }
-	.app { display: flex; min-height: 100vh; }
-	nav { min-height: 0; overflow-y: auto; }
-	.project-heading { display: flex; justify-content: space-between; font-size: 10px; color: var(--ui-muted, #7b8971); letter-spacing: 1px; margin: 4px 8px 15px; }
-	nav button { width: 100%; display: flex; gap: 9px; background: transparent; border: 0; padding: 12px; text-align: left; color: var(--ui-muted, #6d7a60); border-radius: 8px; margin-bottom: 5px; font-size: 13px; }
-	nav button:hover { background: var(--ui-soft); color: var(--ui-text); }
-	nav button span { overflow-wrap: anywhere; }
-	nav button.chosen { background: var(--ui-active, #dce7ce); color: var(--ui-base-ink, #35502d); font-weight: 600; }
-	.new-project { margin-top: 13px; }
-	.sidebar-footer { margin-top: auto; padding-top: 32px; }
-	.workspace { flex: 1; min-width: 0; padding: 0 35px; display: flex; flex-direction: column; }
-	header { height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--ui-border, #e1e5dc); font-size: 12px; color: var(--ui-muted, #839076); }
-	.project-header { margin-bottom: 24px; }
-	.workspace-location { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
-	.breadcrumb { min-width: 0; overflow: hidden; }
-	.breadcrumb ol { display: flex; align-items: center; gap: 10px; list-style: none; padding: 0; margin: 0; }
-	.breadcrumb li { display: flex; align-items: center; min-width: 0; }
-	.breadcrumb li:not(:last-child)::after { content: '/'; margin-left: 10px; color: var(--ui-muted, #839076); flex-shrink: 0; }
-	.breadcrumb [aria-current="page"] { color: var(--ui-text, #526348); font-weight: 600; }
-	.crumb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.brand span { color: var(--ui-accent, #839e5d); }
+	.setup .eyebrow { font-size: 9px; font-weight: 600; letter-spacing: 1.5px; color: var(--ui-muted, #839273); }
 	.breadcrumb .project-link { display: block; width: auto; min-width: 0; padding: 0; margin: 0; border: 0; border-radius: 2px; background: transparent; color: inherit; font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.project-link:hover { color: var(--ui-accent, #425f30); text-decoration: underline; }
 	.header-save.save-actions { flex-shrink: 0; flex-wrap: nowrap; }
-	.menu-toggle { display: none; flex-shrink: 0; align-items: center; gap: 7px; border: 1px solid var(--ui-border, #d3ddc8); border-radius: 7px; background: var(--ui-surface, #fcfdfb); color: var(--ui-text, #536a45); padding: 9px 10px; font-size: 11px; }
-	.menu-toggle svg { width: 17px; height: 17px; }
 	.page-heading { display: flex; gap: 20px; align-items: center; justify-content: space-between; padding: 33px 0; }
-	h1 { font-size: clamp(28px, 3vw, 36px); font-weight: 650; letter-spacing: -1.2px; margin: 12px 0; overflow-wrap: anywhere; }
-	h2 { font-size: 22px; font-weight: 650; letter-spacing: -.6px; }
-	h3 { font-size: 13px; }
-	p { color: var(--ui-muted, #7a886e); font-size: 13px; line-height: 1.7; }
+	.setup h1 { font-size: clamp(28px, 3vw, 36px); font-weight: 650; letter-spacing: -1.2px; margin: 12px 0; overflow-wrap: anywhere; }
+	.setup p { color: var(--ui-muted, #7a886e); font-size: 13px; line-height: 1.7; }
 	.page-heading p { margin: 0; }
-	.primary, .secondary { border-radius: 7px; padding: 10px 14px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-	.primary:hover:not(:disabled), .secondary:hover:not(:disabled) { box-shadow: 0 2px 4px rgb(16 24 40 / 10%); }
-	.primary { color: var(--ui-on-primary, #f3f8ec); background: var(--ui-primary, #304d36); border: 1px solid var(--ui-primary, #304d36); }
-	.secondary { color: var(--ui-text, #536a45); background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #d3ddc8); }
-	.panel { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); overflow: hidden; }
-	.empty-state { padding: 45px; text-align: center; margin-bottom: 30px; }
-	.empty-state .primary { margin: 12px; }
-	.inline-form { padding: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
-	.inline-form label { font-size: 12px; }
-	input, textarea { color: var(--ui-text, #34492c); font: inherit; font-size: 12px; background: white; border: 1px solid var(--ui-border, #d4dec8); border-radius: 5px; padding: 10px; min-width: 0; }
-	.inline-form input { flex: 1; min-width: 150px; }
+	.setup .panel { background: var(--ui-surface, #fcfdfb); border: 1px solid var(--ui-border, #dce2d4); border-radius: 12px; box-shadow: var(--ui-shadow); overflow: hidden; }
 	.save-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 	.save-actions > span { color: var(--ui-muted, #78886b); font-size: 10px; }
-	.project-tools { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; }
-	.view-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
-	.view-tabs button { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 7px; color: var(--ui-muted, #7b8a6e); background: transparent; padding: 10px 13px; font-size: 12px; white-space: nowrap; }
-	.view-tabs button:hover { color: var(--ui-text); background: var(--ui-soft); }
-	.view-tabs button.active { color: var(--ui-base-ink, #3f5f2e); background: var(--ui-active, #e3ecd6); font-weight: 600; }
 	.editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; }
 	.editor-panel { min-width: 0; }
 	.panel-toolbar { display: flex; align-items: center; justify-content: space-between; height: 58px; padding: 14px 18px; border-bottom: 1px solid var(--ui-border, #e1e8d8); }
@@ -979,11 +934,9 @@
 	.member-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 	.remove-member { color: #9b4335; }
 	.notice { padding: 12px 15px; border-radius: 5px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
-	.library { padding: 25px; }
 	.utm-form { max-width: 640px; }
 	.utm-form input { width: 100%; }
 	.utm-form .save-actions { margin-top: 22px; }
-	.library label { display: block; font-size: 11px; margin: 16px 0 8px; color: var(--ui-text, #5e7450); }
 	.upload-results { padding-left: 20px; color: var(--ui-text, #648249); font-size: 12px; line-height: 1.8; }
 	.upload-results li { overflow-wrap: anywhere; }
 	.upload-results .upload-failed { color: #9b4335; }
@@ -1002,10 +955,9 @@
 	.export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 	.export-actions input { flex: 1; min-width: min(100%, 240px); }
 	.export-actions a { text-decoration: none; }
-	footer { font-size: 9px; letter-spacing: 1px; color: var(--ui-muted, #94a186); border-top: 1px solid var(--ui-border, #e1e5dc); padding: 20px 0; margin-top: auto; }
 	.setup { min-height: 100vh; max-width: 780px; margin: auto; padding: 60px 25px; }
 	.setup-card { padding: 35px; }
 	.setup-card ol { font-size: 12px; color: var(--ui-muted, #6d7f5c); line-height: 2.2; padding-left: 20px; }
-	@media (max-width: 1100px) { .workspace { padding: 0 22px; } header { position: sticky; top: 0; z-index: 10; height: 65px; background: var(--ui-canvas, #f6f7f3); } .menu-toggle { display: inline-flex; } .editor-grid { grid-template-columns: minmax(0, 1fr); } .page-heading { flex-wrap: wrap; } }
-	@media (max-width: 640px) { .app { flex-direction: column; } .brand { margin-bottom: 20px; } .sidebar-footer { padding-top: 20px; } .workspace { padding: 0 18px; } .header-save { flex-direction: column; align-items: flex-end; gap: 4px; } .save-detail { display: none; } .library { padding: 18px; } .setup-card { padding: 23px; } .inline-form input { width: 100%; } }
+	@media (max-width: 1100px) { .editor-grid { grid-template-columns: minmax(0, 1fr); } .page-heading { flex-wrap: wrap; } }
+	@media (max-width: 640px) { .brand { margin-bottom: 20px; } .header-save { flex-direction: column; align-items: flex-end; gap: 4px; } .save-detail { display: none; } .setup-card { padding: 23px; } }
 </style>

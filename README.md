@@ -3,6 +3,68 @@ and persistent image storage. No managed-service subscription is required.
 
 ## Hosted workspace
 
+### Email signatures
+
+The sidebar separates **Newsletters** and **Signatures**, using the same workspace
+navigation, styling, and tab controls in both sections. Use **New signature**
+to create a signature, then upload one or more separate `.html` files in
+**HTML variations**. Each file becomes a named variation; **Edit variation**
+lets you rename it, replace the file, or edit its HTML source. Files must be
+non-empty UTF-8 HTML no larger than **1 MB** each.
+
+Templates support simple, case-sensitive placeholders such as `{{ name }}`,
+`{{phone}}`, `{{ email }}`, and `{{ job_title }}`. Whitespace inside the braces
+is optional. Conditional blocks support `{{#if field}}`, `{{else if field}}`,
+`{{else}}`, and `{{/if}}`, including nesting:
+
+```html
+<strong>{{ name }}</strong>
+{{#if phone}}
+  <a href="tel:{{ phone }}">{{ phone }}</a>
+{{else if email}}
+  <a href="mailto:{{ email }}">{{ email }}</a>
+{{else}}
+  <span>Contact our office</span>
+{{/if}}
+```
+
+A non-empty contact value selects its branch; empty or missing fields are false.
+Values are text, so the strings `false` and `0` are non-empty and therefore true.
+Only the selected branch is rendered. Missing placeholders in unselected branches
+do not prevent export; missing placeholders in a selected branch still report an
+error. Fields from conditions and every branch appear in the contact editor.
+Condition nesting is limited to 50 levels. Other helpers, expressions, nested
+paths, and triple-brace/raw-HTML substitutions are not supported.
+Attribute placeholders must be quoted, for example
+`href="tel:{{ phone }}"`. Scripts, event handlers, embedded documents, forms,
+active URL schemes, and placeholders in CSS are rejected.
+
+Manage people in the signature's **Contacts** tab. Contact fields are generated
+from the union of all variation placeholders, with **name** always required.
+Contacts belong only to that signature and are reused by all its variations;
+editing a contact updates every variation's personalized output. Other fields
+can be saved empty. Adding a variation with new fields does not silently fill
+existing contacts: edit and save those contacts before exporting that variation,
+unless the missing fields occur only in an unselected conditional branch.
+Contact text is HTML-escaped, not treated as markup.
+
+Use **Preview & export** to preview a saved variation for a saved contact,
+copy the generated HTML, or select one or more contacts and download separate
+personalized `.html` files. **Export all variations** lists a download for every
+selected contact/variation pair. Previews run in a sandboxed iframe; downloads
+require sign-in and are not public newsletter permalinks. Use absolute public
+image URLs (or embedded raster images) for signatures used outside the application.
+
+Signatures are private to their owning account, independent of newsletter
+membership. Saving uses revision checks; use **Reload signature** to recover
+from a conflict without overwriting another session's changes. Deleting a contact
+removes it from all variations in that signature; deleting a variation keeps the
+contacts. Deleting a signature permanently removes all its variations and
+contacts. Deleting its owner account also removes its private signatures, unlike
+owned newsletters, which transfer to the deleting administrator.
+
+### Newsletters
+
 Users sign in to private projects. Each project has editable MJML templates,
 newsletter campaigns, a reusable image library, and live HTML export permalinks.
 The interface calls projects **Newsletters** and newsletter variations **Campaigns**;
@@ -564,6 +626,8 @@ They cannot delete their own account. All projects owned by the deleted user
 transfer to the administrator performing the deletion, including projects where
 that administrator was already an editor. Other memberships, credentials,
 sessions, pending invitations, preferences, and password reset links are removed.
+Private email signatures, their HTML variations, and signature contacts are also
+permanently removed; they do not transfer to the administrator.
 Projects, templates, campaigns, images, publication snapshots, and public export
 and image URLs remain intact. Historical creator references become empty rather
 than being attributed to the new owner. Account deletion cannot be undone.
