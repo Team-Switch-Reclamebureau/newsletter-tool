@@ -168,7 +168,7 @@
 			]);
 			if (version !== selectionVersion) return;
 			const project = projects.find((project) => project.id === id);
-			if (!project) throw new Error('This project is no longer available. Reload the workspace.');
+			if (!project) throw new Error('This newsletter is no longer available. Reload the workspace.');
 			const fields = { name: project.name, template: project.template, snippet: project.itemTemplate ?? '' };
 			contexts[id] = {
 				project, ...fields, projectSnapshot: templateSnapshot(fields),
@@ -214,7 +214,7 @@
 
 	function beginEdition(id: string | null = null) {
 		const source = context?.drafts.find((entry) => entry.newsletter.id === id);
-		if (id && !source) { toasts.error('The source campaign is no longer available. Reload the project before cloning.'); return; }
+		if (id && !source) { toasts.error('The source campaign is no longer available. Reload the newsletter before cloning.'); return; }
 		cloneSourceId = source?.newsletter.id ?? null;
 		editionName = source ? `${source.newsletter.name.slice(0, 155)} copy` : '';
 		newEdition = true;
@@ -353,7 +353,7 @@
 				current.snippet = result.project.itemTemplate ?? '';
 			}
 			projects = projects.map((project) => project.id === result.project.id ? result.project : project);
-			toasts.success('Project templates saved.');
+			toasts.success('Newsletter templates saved.');
 		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.templateSaving = false; }
 	}
@@ -383,7 +383,7 @@
 
 	async function uploadItemImage(newsletterId: string, itemId: string, fieldName: string, file: File, applyToField = true): Promise<string> {
 		const current = context;
-		if (!current) throw new Error('Choose a project first.');
+		if (!current) throw new Error('Choose a newsletter first.');
 		const entry = current.drafts.find((entry) => entry.newsletter.id === newsletterId);
 		if (!entry) throw new Error('The selected campaign no longer exists.');
 		if (!entry.revision) throw new Error('Save this campaign before uploading campaign images.');
@@ -423,7 +423,7 @@
 		current.uploading = true;
 		current.libraryUploadTotal = files.length;
 		current.libraryUploads = [];
-		current.libraryUploadDestination = edition ? `Campaign: ${edition.newsletter.name}` : 'Project images';
+		current.libraryUploadDestination = edition ? `Campaign: ${edition.newsletter.name}` : 'Newsletter images';
 		try {
 			await uploadImages(files, (file) => storeImage(current, file, edition), (result) => {
 				current.libraryUploads = [...current.libraryUploads, result];
@@ -454,7 +454,7 @@
 			toasts.error('This image is used in campaign content or a template. Remove those references and save before deleting it.');
 			return;
 		}
-		if (!window.confirm(`Delete "${asset.filename}" from ${edition ? `campaign "${edition.newsletter.name}"` : 'the project library'}? Its file will be permanently deleted if no other libraries use it. Images used in current saved campaigns or templates are protected. Previously imported Mailchimp campaigns do not protect unused files.`)) return;
+		if (!window.confirm(`Delete "${asset.filename}" from ${edition ? `campaign "${edition.newsletter.name}"` : 'the newsletter library'}? Its file will be permanently deleted if no other libraries use it. Images used in current saved campaigns or templates are protected. Previously imported Mailchimp campaigns do not protect unused files.`)) return;
 		current.deletingAssetId = asset.id;
 		try {
 			const suffix = edition ? `?newsletterId=${edition.newsletter.id}` : '';
@@ -511,7 +511,7 @@
 	async function removeMember(member: ProjectMember) {
 		const current = context;
 		if (!current || current.membersLoading || current.addingMember || current.removingMemberId !== null) return;
-		if (!window.confirm(`Remove ${member.name} (${member.email}) from ${current.project.name}? They will lose access to this project's campaigns, templates, and images. Their account and existing content will be kept.`)) return;
+		if (!window.confirm(`Remove ${member.name} (${member.email}) from ${current.project.name}? They will lose access to this newsletter's campaigns, templates, and images. Their account and existing content will be kept.`)) return;
 		current.removingMemberId = member.id;
 		try {
 			const result = await requestJson<{ members: ProjectMember[]; message: string }>(`/api/projects/${current.project.id}/members/${encodeURIComponent(member.id)}`, { method: 'DELETE' });
@@ -543,7 +543,7 @@
 				jsonRequest('PATCH', { recipients: current.testRecipients, revision: current.testRecipientsSettings.revision }));
 			current.testRecipientsSettings = result.settings;
 			current.testRecipients = result.settings.recipients.join(', ');
-			toasts.success('Test recipients saved for every edition in this project.');
+			toasts.success('Test recipients saved for every campaign in this newsletter.');
 		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.testRecipientsSaving = false; }
 	}
@@ -553,8 +553,8 @@
 		const entry = draft;
 		if (!current || !entry || current.testEmailSending || current.testRecipientsSaving) return;
 		if (!entry.revision) { toasts.error('Save this edition before sending a test email.'); return; }
-		if (testRecipientsDirty(current)) { toasts.error('Save the project recipient list before sending.'); return; }
-		if (!current.testRecipientsSettings.recipients.length) { toasts.error('Add and save at least one project test recipient first.'); return; }
+		if (testRecipientsDirty(current)) { toasts.error('Save the newsletter recipient list before sending.'); return; }
+		if (!current.testRecipientsSettings.recipients.length) { toasts.error('Add and save at least one newsletter test recipient first.'); return; }
 		current.testEmailSending = true;
 		try {
 			const result = await requestJson<TestEmailResult>(
@@ -580,7 +580,7 @@
 			if (current.name === submitted) current.name = result.project.name;
 			current.deleteConfirmation = '';
 			projects = projects.map((project) => project.id === result.project.id ? result.project : project);
-			toasts.success('Project name saved.');
+			toasts.success('Newsletter name saved.');
 		} catch (cause) { toasts.error(message(cause)); }
 		finally { current.nameSaving = false; }
 	}
@@ -603,11 +603,11 @@
 		event.preventDefault();
 		const current = context;
 		if (!current || current.projectDeleting) return;
-		if (current.project.role !== 'owner') { toasts.error('Only the project owner can delete this project.'); return; }
-		if (current.deleteConfirmation !== current.project.name) { toasts.error('Type the exact saved project name to confirm deletion.'); return; }
+		if (current.project.role !== 'owner') { toasts.error('Only the newsletter owner can delete this newsletter.'); return; }
+		if (current.deleteConfirmation !== current.project.name) { toasts.error('Type the exact saved newsletter name to confirm deletion.'); return; }
 		if (current.nameSaving || current.templateSaving || current.uploading || current.deletingAssetId !== null || current.deletingEditionId !== null
 			|| current.testRecipientsSaving || current.testEmailSending || current.membersLoading || current.addingMember || current.removingMemberId !== null || current.drafts.some((entry) => entry.saving)) {
-			toasts.error('Wait for the current project operation before deleting.');
+			toasts.error('Wait for the current newsletter operation before deleting.');
 			return;
 		}
 		if (!current.project.deletionPending) {
@@ -616,7 +616,7 @@
 				value.template, value.snippet, ...value.drafts.map((entry) => serializeNewsletter(entry.newsletter))
 			]);
 			if ([...assetIds].some((id) => otherSources.some((source) => source.includes(`/media/${id}.webp`)))) {
-				toasts.error('Project images are referenced in another open project or draft. Remove those references before deleting.');
+				toasts.error('Newsletter images are referenced in another open newsletter or draft. Remove those references before deleting.');
 				return;
 			}
 		}
@@ -642,8 +642,8 @@
 	}
 
 	async function reloadProject() {
-		if (currentDeletion || context?.projectDeleting || context?.nameSaving || context?.testRecipientsSaving) { toasts.error('Wait for the current project operation before reloading.'); return; }
-		if (unsaved && !window.confirm('Export any drafts you want to keep. Reloading discards unsaved changes in the selected project. Continue?')) return;
+		if (currentDeletion || context?.projectDeleting || context?.nameSaving || context?.testRecipientsSaving) { toasts.error('Wait for the current newsletter operation before reloading.'); return; }
+		if (unsaved && !window.confirm('Export any drafts you want to keep. Reloading discards unsaved changes in the selected newsletter. Continue?')) return;
 		try {
 			const result = await requestJson<{ projects: RemoteProject[] }>('/api/projects');
 			projects = result.projects;
@@ -667,7 +667,7 @@
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} />
-<svelte:head><title>{data.settings.applicationName} — Newsletter workspace</title><meta name="description" content="Your self-hosted newsletter projects, editions, and images." /></svelte:head>
+<svelte:head><title>{data.settings.applicationName} — Newsletter workspace</title><meta name="description" content="Your self-hosted newsletters, campaigns, and images." /></svelte:head>
 
 {#if !data.configured}
 	<main class="setup">
@@ -684,9 +684,9 @@
 	<div class="app">
 		<WorkspaceSidebar bind:open={sidebarOpen}>
 			<a href="/" class="brand">{data.settings.applicationName}<span>.</span></a>
-			<div class="project-heading"><span>PROJECTS</span><span>{projects.length}</span></div>
-			<nav aria-label="Newsletter projects">{#each projects as project (project.id)}<button class:chosen={projectId === project.id} onclick={() => selectProject(project.id)}>▤ <span>{project.name}</span></button>{/each}</nav>
-			<button class="secondary new-project" onclick={() => { newProject = true; sidebarOpen = false; }}>+ New project</button>
+			<div class="project-heading"><span>NEWSLETTERS</span><span>{projects.length}</span></div>
+			<nav aria-label="Newsletters">{#each projects as project (project.id)}<button class:chosen={projectId === project.id} onclick={() => selectProject(project.id)}>▤ <span>{project.name}</span></button>{/each}</nav>
+			<button class="secondary new-project" onclick={() => { newProject = true; sidebarOpen = false; }}>+ New newsletter</button>
 			<div class="sidebar-footer">
 				{#if data.user}<UserMenu name={data.user.name} email={data.user.email} isAdmin={data.isAdmin} {signingOut} onSignOut={logout} />{/if}
 			</div>
@@ -718,15 +718,15 @@
 				<div class="page-heading"><div><div class="eyebrow">A LITTLE LESS WORK. A BETTER EMAIL.</div><h1>Your next newsletter starts here<span>.</span></h1><p>One template. A new story with every campaign.</p></div></div>
 			{/if}
 			{#if newProject}
-				<form class="inline-form panel" onsubmit={createProject}><label for="project-name">Project name</label><input id="project-name" bind:value={projectName} maxlength="160" required /><button class="primary" disabled={creatingProject || !projectName.trim()}>{creatingProject ? 'Creating…' : 'Create project'}</button><button class="secondary" type="button" onclick={() => newProject = false}>Cancel</button></form>
+				<form class="inline-form panel" onsubmit={createProject}><label for="project-name">Newsletter name</label><input id="project-name" bind:value={projectName} maxlength="160" required /><button class="primary" disabled={creatingProject || !projectName.trim()}>{creatingProject ? 'Creating…' : 'Create newsletter'}</button><button class="secondary" type="button" onclick={() => newProject = false}>Cancel</button></form>
 			{/if}
-			{#if loading}<p role="status">Loading project…</p>
+			{#if loading}<p role="status">Loading newsletter…</p>
 			{:else if !context}
-				<section class="panel empty-state"><h2>A place for every project.</h2><p>Create a project to start with a ready-to-use MJML template, or import your own template afterwards.</p><button class="primary" onclick={() => newProject = true}>Create your first project</button>{#if selected}<button class="secondary" onclick={reloadProject}>Reload project</button>{/if}</section>
+				<section class="panel empty-state"><h2>A place for every newsletter.</h2><p>Create a newsletter to start with a ready-to-use MJML template, or import your own template afterwards.</p><button class="primary" onclick={() => newProject = true}>Create your first newsletter</button>{#if selected}<button class="secondary" onclick={reloadProject}>Reload newsletter</button>{/if}</section>
 			{:else}
 				<fieldset class="project-content" disabled={context.projectDeleting}>
 				{#if newEdition}<form class="inline-form panel" onsubmit={createEdition}><label for="edition-name">{cloneSourceId ? 'Cloned campaign name' : 'Campaign name'}</label><input id="edition-name" bind:value={editionName} maxlength="160" required /><button class="primary" disabled={!editionName.trim()}>{cloneSourceId ? 'Clone campaign' : 'Create campaign'}</button><button class="secondary" type="button" onclick={() => { newEdition = false; cloneSourceId = null; }}>Cancel</button></form>{/if}
-				<div class="project-tools"><div class="view-tabs" aria-label={editionView ? 'Campaign views' : 'Project views'}>
+				<div class="project-tools"><div class="view-tabs" aria-label={editionView ? 'Campaign views' : 'Newsletter views'}>
 					{#if editionView}
 						<button class:active={mode === 'content'} onclick={() => mode = 'content'}><TabIcon name="content" />Content</button>
 						<button class:active={mode === 'edition-settings'} onclick={() => mode = 'edition-settings'}><TabIcon name="settings" />Settings</button>
@@ -736,48 +736,48 @@
 						{#if !context.project.deletionPending}
 						<button class:active={mode === 'editions'} onclick={() => mode = 'editions'}><TabIcon name="editions" />Campaigns ({context.drafts.length})</button>
 						<button class:active={mode === 'templates'} onclick={() => mode = 'templates'}><TabIcon name="templates" />Templates</button>
-						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}><TabIcon name="image" />Project images ({context.assets.length})</button>
+						<button class:active={mode === 'project-images'} onclick={() => mode = 'project-images'}><TabIcon name="image" />Newsletter images ({context.assets.length})</button>
 						<button class:active={mode === 'sharing'} onclick={openSharing}><TabIcon name="sharing" />Sharing</button>
 						{/if}
 						<button class:active={mode === 'project-settings'} onclick={() => mode = 'project-settings'}><TabIcon name="settings" />Project settings</button>
 					{/if}
-				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.nameSaving || context.testRecipientsSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload project</button>{#if !editionView && !context.project.deletionPending}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
+				</div><div class="save-actions"><button class="secondary" onclick={reloadProject} disabled={context.templateSaving || context.nameSaving || context.testRecipientsSaving || context.uploading || context.deletingAssetId !== null || draft?.saving}>Reload newsletter</button>{#if !editionView && !context.project.deletionPending}<button class="primary" onclick={() => beginEdition()}>+ New campaign</button>{/if}</div></div>
 				{#if mode === 'editions'}
 					{#key projectId}<EditionTable editions={context.drafts} onOpen={selectEdition} onClone={beginEdition} onDelete={deleteEdition} deletingId={context.deletingEditionId} deletionDisabled={currentDeletion || context.testEmailSending || context.uploading || context.deletingAssetId !== null || context.drafts.some((value) => value.saving)} />{/key}
 				{:else if mode === 'project-settings'}
 					<section class="panel library project-settings" aria-labelledby="project-settings-heading">
-						<h2 id="project-settings-heading">Project settings</h2>
+						<h2 id="project-settings-heading">Newsletter settings</h2>
 						{#if context.project.deletionPending}
 							<p role="status">Deletion has started. Editing and campaign HTML links are disabled. Retry deletion below to finish removing image files.</p>
 						{:else}
 							<form onsubmit={saveProjectName}>
-								<label for="settings-project-name">Project name</label>
+								<label for="settings-project-name">Newsletter name</label>
 								<input id="settings-project-name" bind:value={context.name} maxlength="160" required disabled={context.nameSaving || context.templateSaving} />
-								<p>Any project member can change the name. Saving it does not save or discard template or campaign drafts.</p>
-								<button class="primary" disabled={!nameDirty || !context.name.trim() || context.nameSaving || context.templateSaving}>{context.nameSaving ? 'Saving...' : 'Save project name'}</button>
+								<p>Any newsletter member can change the name. Saving it does not save or discard template or campaign drafts.</p>
+								<button class="primary" disabled={!nameDirty || !context.name.trim() || context.nameSaving || context.templateSaving}>{context.nameSaving ? 'Saving...' : 'Save newsletter name'}</button>
 							</form>
 							<form onsubmit={saveTestRecipients}>
 								<label for="project-test-recipients">Shared test-email recipients</label>
 								<textarea id="project-test-recipients" rows="3" bind:value={context.testRecipients} maxlength={MAX_TEST_RECIPIENTS_LENGTH} disabled={context.testRecipientsSaving || context.testEmailSending} placeholder="person@example.com, colleague@example.com"></textarea>
-								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by all campaigns and members of this project. Each recipient receives a separate message.</p>
+								<p>Separate email addresses with commas, up to {MAX_TEST_RECIPIENTS} recipients. This list is shared by all campaigns and members of this newsletter. Each recipient receives a separate message.</p>
 								<button class="secondary" disabled={!recipientsDirty || context.testRecipientsSaving || context.testEmailSending}>{context.testRecipientsSaving ? 'Saving recipients...' : 'Save recipients'}</button>
 							</form>
 						{/if}
 						<section class="project-danger" aria-labelledby="delete-project-heading">
-							<h3 id="delete-project-heading">Delete project</h3>
+							<h3 id="delete-project-heading">Delete newsletter</h3>
 							{#if context.project.role === 'owner'}
-								<p>This cannot be undone. It removes this project for everyone, discards its unsaved changes, disables all campaign HTML links, and permanently deletes its shared and campaign image files. Other projects and user accounts are kept.</p>
+								<p>This cannot be undone. It removes this newsletter for everyone, discards its unsaved changes, disables all campaign HTML links, and permanently deletes its shared and campaign image files. Other newsletters and user accounts are kept.</p>
 								<form onsubmit={deleteProject}>
 									<label for="delete-project-confirmation">Type <strong>{context.project.name}</strong> to confirm</label>
 									<input id="delete-project-confirmation" bind:value={context.deleteConfirmation} autocomplete="off" spellcheck="false" required />
-									<button class="destructive" disabled={context.projectDeleting || context.deleteConfirmation !== context.project.name || context.nameSaving || context.templateSaving || context.testRecipientsSaving || context.testEmailSending || context.uploading || context.deletingAssetId !== null || currentDeletion || context.drafts.some((entry) => entry.saving)}>{context.projectDeleting ? 'Deleting...' : context.project.deletionPending ? 'Retry Delete project' : 'Delete project'}</button>
+									<button class="destructive" disabled={context.projectDeleting || context.deleteConfirmation !== context.project.name || context.nameSaving || context.templateSaving || context.testRecipientsSaving || context.testEmailSending || context.uploading || context.deletingAssetId !== null || currentDeletion || context.drafts.some((entry) => entry.saving)}>{context.projectDeleting ? 'Deleting...' : context.project.deletionPending ? 'Retry Delete newsletter' : 'Delete newsletter'}</button>
 								</form>
-							{:else}<p>Only the project owner can delete this project.</p>{/if}
+							{:else}<p>Only the newsletter owner can delete this newsletter.</p>{/if}
 						</section>
 					</section>
 				{:else if mode === 'sharing'}
 					<section class="panel" aria-labelledby="sharing-heading">
-						<div class="panel-toolbar"><h2 id="sharing-heading">Share this project</h2></div>
+						<div class="panel-toolbar"><h2 id="sharing-heading">Share this newsletter</h2></div>
 						<div class="member-list">
 							<div class="save-actions"><h3 id="members-heading">People with access{context.members ? ` (${context.members.length})` : ''}</h3><button class="secondary" disabled={context.membersLoading || context.addingMember || context.removingMemberId !== null} onclick={loadMembers}>Refresh members</button></div>
 							{#if context.membersLoading}<p role="status">Loading members…</p>{/if}
@@ -787,7 +787,7 @@
 										<li><div><strong>{member.name}{member.id === data.user?.id ? ' (you)' : ''}</strong><span>{member.email}</span></div><div class="member-actions">
 											<span class="member-role">{member.role === 'owner' ? 'Owner' : 'Editor'}</span>
 											{#if context.project.role === 'owner' && member.role === 'editor'}
-												<button class="secondary remove-member" aria-label={`Remove ${member.email} from project`} disabled={context.membersLoading || context.addingMember || context.removingMemberId !== null} onclick={() => removeMember(member)}>{context.removingMemberId === member.id ? 'Removing...' : 'Remove member'}</button>
+												<button class="secondary remove-member" aria-label={`Remove ${member.email} from newsletter`} disabled={context.membersLoading || context.addingMember || context.removingMemberId !== null} onclick={() => removeMember(member)}>{context.removingMemberId === member.id ? 'Removing...' : 'Remove member'}</button>
 											{/if}
 										</div></li>
 									{/each}
@@ -795,9 +795,9 @@
 							{/if}
 						</div>
 						<form class="member-form" onsubmit={addMember}>
-							<p>Anyone with access to this project can share it with others. Add an existing user by email to grant editor access to all newsletters, templates, and images in this project. Editors can also share the project.</p>
+							<p>Anyone with access to this newsletter can share it with others. Add an existing user by email to grant editor access to all campaigns, templates, and images in this newsletter. Editors can also share the newsletter.</p>
 							<p>The recipient needs an account first. Ask an administrator to invite them if they do not have one.</p>
-							<p>Only the project owner can remove editors. Removing project access does not delete their account or existing content.</p>
+							<p>Only the newsletter owner can remove editors. Removing newsletter access does not delete their account or existing content.</p>
 							<label for="member-email">Member email</label><input id="member-email" type="email" bind:value={memberEmail} required />
 							<button class="secondary" disabled={context.addingMember || context.membersLoading || context.removingMemberId !== null || !memberEmail.trim()}>{context.addingMember ? 'Adding…' : 'Add member'}</button>
 						</form>
@@ -807,15 +807,15 @@
 						<h2 id="publish-heading">Test &amp; publish</h2>
 						<section class="test-email" aria-labelledby="test-email-heading">
 							<h3 id="test-email-heading">Send a test email</h3>
-							<p>Tests use the latest saved campaign and saved project templates, not unsaved edits. They use the sender and SMTP settings configured by an administrator.</p>
+							<p>Tests use the latest saved campaign and saved newsletter templates, not unsaved edits. They use the sender and SMTP settings configured by an administrator.</p>
 							<div>
-								<p>Project test recipients: {context.testRecipientsSettings.recipients.length ? context.testRecipientsSettings.recipients.join(', ') : 'None saved.'}</p>
+								<p>Newsletter test recipients: {context.testRecipientsSettings.recipients.length ? context.testRecipientsSettings.recipients.join(', ') : 'None saved.'}</p>
 								<div class="save-actions">
-									<button class="secondary" type="button" onclick={() => mode = 'project-settings'}>Edit project recipients</button>
+									<button class="secondary" type="button" onclick={() => mode = 'project-settings'}>Edit newsletter recipients</button>
 									<button class="primary" type="button" onclick={sendTestEmail} disabled={!draft.revision || draft.saving || currentDeletion || recipientsDirty || !context.testRecipientsSettings.recipients.length || context.testRecipientsSaving || context.testEmailSending}>{context.testEmailSending ? 'Sending test...' : 'Send test email'}</button>
 								</div>
 								{#if !draft.revision}<p>Save this campaign before sending a test email.</p>{/if}
-								{#if recipientsDirty}<p>Save the recipients in Project settings before sending.</p>{/if}
+								{#if recipientsDirty}<p>Save the recipients in Newsletter settings before sending.</p>{/if}
 								<p>SMTP acceptance does not guarantee inbox delivery. Check the recipients' inboxes and spam folders.</p>
 							</div>
 						</section>
@@ -826,7 +826,7 @@
 							{#if draft.permalink}
 								<label for="html-permalink">Public HTML permalink</label>
 								<div class="export-actions"><input id="html-permalink" value={draft.permalink} readonly onfocus={(event) => event.currentTarget.select()} /><button class="secondary" onclick={() => copyPermalink(draft.newsletter.id)}>Copy link</button><a class="secondary" href={draft.permalink} target="_blank" rel="noreferrer">Open HTML</a><a class="secondary" href={draft.permalink} download={`${draft.newsletter.id}.html`}>Download HTML</a></div>
-								<p>Always uses the latest saved campaign, UTM settings, and project templates. Anyone with this link can access the HTML. Mailchimp must be able to reach this URL from the internet.</p>
+								<p>Always uses the latest saved campaign, UTM settings, and newsletter templates. Anyone with this link can access the HTML. Mailchimp must be able to reach this URL from the internet.</p>
 							{:else}
 								<p>Save this campaign to create its public HTML permalink.</p>
 								<button class="primary" disabled={draft.saving || currentDeletion} onclick={saveEdition}>{draft.saving ? 'Saving...' : 'Save campaign & create link'}</button>
@@ -848,7 +848,7 @@
 						</form>
 					</section>
 				{:else if mode === 'project-images' || mode === 'edition-images'}
-					<section class="panel library"><h2>{editionView ? 'Campaign images' : 'Project images'}</h2><p>{editionView ? 'These images belong to this campaign and are inherited by its clones. Shared project images remain available in the content editor.' : 'These images are available in every campaign of this project.'} All image URLs remain public for email delivery.</p>
+					<section class="panel library"><h2>{editionView ? 'Campaign images' : 'Newsletter images'}</h2><p>{editionView ? 'These images belong to this campaign and are inherited by its clones. Shared newsletter images remain available in the content editor.' : 'These images are available in every campaign of this newsletter.'} All image URLs remain public for email delivery.</p>
 						{#if editionView && draft && !draft.revision}<p>Save this campaign before uploading campaign images.</p>{/if}
 						<p>Select one or more JPEG, PNG, or WebP images. Each image can be up to 5 MB and 20 megapixels. Stored as immutable WebP files with public URLs.</p><label for="library-upload">Upload images</label><input id="library-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={context.uploading || context.deletingAssetId !== null || (editionView && !draft?.revision)} onchange={(event) => uploadLibraryImages(event.currentTarget)} />
 						{#if context.libraryUploadTotal}
@@ -858,11 +858,11 @@
 								{#each context.libraryUploads as result, index (index)}<li class:upload-failed={result.status === 'failed'}><strong>{result.filename}</strong>: {#if result.status === 'uploaded'}Uploaded{:else}<span role="alert">{result.error}</span>{/if}</li>{/each}
 							</ul>
 						{:else if context.uploading}<p role="status">Uploading image…</p>{/if}
-						<div class="asset-grid">{#each libraryAssets as asset (asset.id)}<article><img src={asset.url} alt={asset.filename} loading="lazy" /><strong>{asset.filename}</strong><small>{asset.width} × {asset.height} · {Math.ceil(asset.bytes / 1024)} KB · {asset.scope === 'edition' ? 'Campaign image' : 'Project image'}</small><a href={asset.url} target="_blank" rel="noreferrer">Open public image ↗</a>{#if editionView && draft}<button class="secondary" disabled={context.deletingAssetId !== null || !itemImageField()} onclick={() => addImageItem(asset)}>Add as item</button>{#if !itemImageField()}<small>Add an image field to the item template to use this image in an item.</small>{/if}{/if}
+						<div class="asset-grid">{#each libraryAssets as asset (asset.id)}<article><img src={asset.url} alt={asset.filename} loading="lazy" /><strong>{asset.filename}</strong><small>{asset.width} × {asset.height} · {Math.ceil(asset.bytes / 1024)} KB · {asset.scope === 'edition' ? 'Campaign image' : 'Newsletter image'}</small><a href={asset.url} target="_blank" rel="noreferrer">Open public image ↗</a>{#if editionView && draft}<button class="secondary" disabled={context.deletingAssetId !== null || !itemImageField()} onclick={() => addImageItem(asset)}>Add as item</button>{#if !itemImageField()}<small>Add an image field to the item template to use this image in an item.</small>{/if}{/if}
 							<button class="secondary delete-image" aria-label={`Delete image ${asset.filename}`} disabled={context.uploading || context.deletingAssetId !== null || imageUsedInDrafts(asset) || (asset.scope === 'edition' && !draft?.revision)} onclick={() => deleteLibraryImage(asset)}>{context.deletingAssetId === asset.id ? 'Deleting…' : 'Delete image'}</button>
 							{#if imageUsedInDrafts(asset)}<small>Used in campaign content or a template. Remove references and save first.</small>{/if}
 						</article>{/each}</div>
-						{#if !libraryAssets.length}<p>{editionView ? 'No images in this library yet. Upload them here or directly from an item.' : 'No project images yet. Upload them here to share them across campaigns.'}</p>{/if}
+						{#if !libraryAssets.length}<p>{editionView ? 'No images in this library yet. Upload them here or directly from an item.' : 'No newsletter images yet. Upload them here to share them across campaigns.'}</p>{/if}
 					</section>
 				{:else if mode === 'content' && draft}
 					{#key draft.newsletter.id}
@@ -870,14 +870,14 @@
 					{/key}
 				{:else}
 					<div class="editor-grid">
-						<section class="panel editor-panel" aria-label={mode === 'templates' ? 'Project templates' : 'Newsletter editor'}>
-							<div class="panel-toolbar"><h2>{mode === 'templates' ? 'Project templates' : 'Newsletter content'}</h2><small>{context.project.role === 'owner' ? 'Owner' : 'Editor'}</small></div>
+						<section class="panel editor-panel" aria-label={mode === 'templates' ? 'Newsletter templates' : 'Newsletter editor'}>
+							<div class="panel-toolbar"><h2>{mode === 'templates' ? 'Newsletter templates' : 'Newsletter content'}</h2><small>{context.project.role === 'owner' ? 'Owner' : 'Editor'}</small></div>
 								<form class="template-form" onsubmit={saveTemplates}>
 									<label for="project-template">Template MJML</label><textarea id="project-template" bind:value={context.template} rows="12" spellcheck="false"></textarea>
 									<p>Place exactly one <code>{'{{items}}'}</code> inside mj-body. Use <code>{'{{newsletter_name}}'}</code> for the campaign name. Typed tags such as <code>{'{{text:headline}}'}</code> create newsletter-level fields.</p>
 									<label for="template-import">Import template.mjml</label><input id="template-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'template')} />
 									<label for="item-template">Item snippet MJML</label><textarea id="item-template" bind:value={context.snippet} rows="8" spellcheck="false" placeholder="Leave empty to use the default item layout."></textarea>
-									<p>Use <code>{'{{type:name}}'}</code> for per-item fields. Types: text, textarea, url, image, number. Untyped content placeholders are not supported. Upload shared images in Project images or campaign-only images in Campaign images, then select them in image fields.</p>
+									<p>Use <code>{'{{type:name}}'}</code> for per-item fields. Types: text, textarea, url, image, number. Untyped content placeholders are not supported. Upload shared images in Newsletter images or campaign-only images in Campaign images, then select them in image fields.</p>
 									<label for="snippet-import">Import item.mjml</label><input id="snippet-import" type="file" accept=".mjml" onchange={(event) => loadTemplate(event.currentTarget, 'snippet')} />
 									<div class="save-actions"><span>{templateDirty ? 'Unsaved template changes' : 'Templates saved'}</span><button class="primary" disabled={context.templateSaving || context.nameSaving}>{context.templateSaving ? 'Saving…' : 'Save templates'}</button></div>
 								</form>

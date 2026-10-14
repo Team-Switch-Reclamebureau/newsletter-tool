@@ -5,7 +5,8 @@ and persistent image storage. No managed-service subscription is required.
 
 Users sign in to private projects. Each project has editable MJML templates,
 newsletter campaigns, a reusable image library, and live HTML export permalinks.
-The interface calls newsletter variations **Campaigns**; internal edition names,
+The interface calls projects **Newsletters** and newsletter variations **Campaigns**;
+project and edition names used internally,
 API routes, stored data, and JSON formats remain unchanged.
 Any project member can share a project with other provisioned accounts as editors
 from the project's **Sharing** tab. Access covers all campaigns, templates, and
@@ -31,7 +32,7 @@ URLs, and the server verifies that hosted images belong to the
 project and are available in the selected campaign. Per-item alt text is supported
 via a typed field such as `{{text:photo_alt}}`.
 
-Use **Project images** in the project views or open a campaign and use
+Use **Newsletter images** in the newsletter views or open a campaign and use
 **Campaign images**. Uploads go to the library shown by that tab.
 Project images are available
 in every campaign; campaign images appear only in that campaign's image choices
@@ -39,7 +40,7 @@ and its clones. Open and save a campaign before uploading campaign-only images.
 Both scopes appear as separate groups in typed image selectors.
 Uploads from the campaign editor always belong to that campaign. Save a new
 campaign first to enable uploads. To add shared project images, upload directly
-in **Project images**; existing project images can still be selected in campaigns.
+in **Newsletter images**; existing project images can still be selected in campaigns.
 Existing images remain project-wide after upgrading.
 
 Campaign scope controls editing and image selection, not private delivery:
@@ -133,13 +134,13 @@ campaigns, projects, browser refreshes, and sign-ins, including other devices.
 Failed preference saves are shown explicitly and restore the previous layout.
 Open a campaign from the **Campaigns** tab by clicking its name or **Open** button.
 Rename campaigns in the campaign **Settings** tab alongside UTM settings.
-The project **Project settings** tab contains its name and shared test-email
+The newsletter **Newsletter settings** tab contains its name and shared test-email
 recipients. Any member can save these settings. Name changes use project revision
 checks and do not save or discard template or campaign drafts. Test-email recipients
 use their own revision checks; **Test & publish** shows the saved list and links
-back to Project settings to edit it.
+back to Newsletter settings to edit it.
 
-Only the project owner can **Delete project**, after typing its exact saved name.
+Only the newsletter owner can **Delete newsletter**, after typing its exact saved name.
 Deletion removes access for everyone, disables all campaign HTML exports, discards
 the project's local drafts, and permanently removes its shared and campaign image
 files. It cannot be undone. Other projects and accounts are unaffected. Deletion
@@ -191,7 +192,7 @@ saved project templates and UTM settings. Unsaved content/template edits are not
 sent. Configure the shared SMTP sender in **Admin settings → Email settings** first.
 The same SMTP configuration is used for account emails and newsletter tests.
 
-Enter up to **20 comma-separated email addresses** in **Project test recipients**
+Enter up to **20 comma-separated email addresses** in **Shared test-email recipients**
 and click **Save recipients**, then **Send test email**. The recipient list is
 stored in PostgreSQL for the whole project, shared across its campaigns and project
 members, and restored on later visits. Revision checks prevent overwriting another
@@ -631,7 +632,7 @@ Selecting a project opens a **Campaigns** overview table with campaign names,
 item counts, save status, and last-saved times. Search by name and sort by name
 or saved time to manage larger sets of variations. Click **Open** to edit an
 campaign; clicking the project breadcrumb returns to the overview without discarding drafts.
-Project views show **Campaigns**, **Templates**, and **Project images**.
+Newsletter views show **Campaigns**, **Templates**, and **Newsletter images**.
 Opening a campaign shows **Content**, **Settings**, **Campaign images**, and **Test & publish**.
 Its HTML permalink is visible above those views. Returning
 via the project breadcrumb restores the project views and keeps unsaved draft edits.

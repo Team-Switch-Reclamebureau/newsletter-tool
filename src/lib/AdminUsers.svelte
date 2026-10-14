@@ -40,12 +40,12 @@
 	}
 
 	function removeUser(user: AdminUser) {
-		if (!window.confirm(`Permanently delete the account for ${user.name} (${user.email})? All sessions and project access will be revoked. Any projects they own will transfer to you. Existing campaigns, templates, and images will be kept. This cannot be undone.`)) return;
-		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'DELETE', {}, 'User deleted. Owned projects were transferred to you; existing content was preserved.');
+		if (!window.confirm(`Permanently delete the account for ${user.name} (${user.email})? All sessions and newsletter access will be revoked. Any newsletters they own will transfer to you. Existing campaigns, templates, and images will be kept. This cannot be undone.`)) return;
+		void action(`/api/admin/users/${encodeURIComponent(user.id)}`, 'DELETE', {}, 'User deleted. Owned newsletters were transferred to you; existing content was preserved.');
 	}
 </script>
 
-<p>Invite users to choose their own password. Project access is granted separately from each project's Sharing tab.</p>
+<p>Invite users to choose their own password. Newsletter access is granted separately from each newsletter's Sharing tab.</p>
 <form onsubmit={invite}>
 	<fieldset disabled={busy}>
 		<label for="invite-name">Name</label><input id="invite-name" bind:value={name} maxlength="80" required />

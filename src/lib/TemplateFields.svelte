@@ -46,7 +46,7 @@
 		<select id={`${prefix}-field-${field.name}-asset`} disabled={!assets.length} aria-describedby={!assets.length ? `${prefix}-field-${field.name}-hint` : undefined} value={assets.some((asset) => asset.url === fieldValue(values, field.name)) ? fieldValue(values, field.name) : ''} onchange={(event) => onUpdate(field.name, event.currentTarget.value)}>
 			<option value="">{assets.length ? 'No uploaded image selected' : 'No uploaded images yet'}</option>
 			{#each ['project', 'edition'] as scope}
-				<optgroup label={scope === 'project' ? 'Project images' : 'Campaign images'}>
+				<optgroup label={scope === 'project' ? 'Newsletter images' : 'Campaign images'}>
 					{#each assets.filter((asset) => asset.scope === scope) as asset (asset.id)}<option value={asset.url}>{asset.filename}</option>{/each}
 				</optgroup>
 			{/each}

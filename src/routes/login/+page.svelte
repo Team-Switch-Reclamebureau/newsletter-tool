@@ -32,7 +32,7 @@
 	<section>
 		<div class="eyebrow">YOUR NEWSLETTER WORKSPACE</div>
 		<h1>Welcome back.</h1>
-		<p>Sign in to your projects, stories, and image library.</p>
+		<p>Sign in to your newsletters, stories, and image library.</p>
 		<form onsubmit={login}>
 			<label for="email">Email address</label><input id="email" type="email" autocomplete="username" bind:value={email} required />
 			<label for="password">Password</label><input id="password" type="password" autocomplete="current-password" bind:value={password} required />
