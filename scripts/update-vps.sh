@@ -23,8 +23,7 @@ main() {
     return 1
   fi
   if ! docker info >/dev/null 2>&1; then
-    echo "Docker access requires sudo."
-    sudo -v
+    echo "Docker is unavailable without sudo. Checking access with sudo..."
     docker_command=(sudo docker)
     "${docker_command[@]}" info >/dev/null
   fi

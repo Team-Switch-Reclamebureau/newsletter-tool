@@ -440,6 +440,10 @@ Replace the example tag with the actual release tag. The script refuses dirty
 working trees, downgrades, and divergent updates. Release tags must include
 `compose.vps.yaml`. It runs Git as your current user and uses sudo only for
 Docker when necessary; do not run the entire script with sudo.
+The script authenticates through `sudo docker` itself, so passwordless sudo rules
+for Docker are respected. A password is still required if your sudo policy requires
+one for Docker. If sudo is unexpectedly needed, run `docker info` on the VPS to
+see the underlying access or daemon error.
 
 The script uses `.env`, project name `postroom`, and the base plus VPS Compose
 files. It does not support registry-image deployments. Override the environment
