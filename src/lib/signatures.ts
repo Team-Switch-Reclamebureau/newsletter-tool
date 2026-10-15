@@ -1,5 +1,6 @@
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import { MAX_TEMPLATE_BYTES } from './remote';
+import { encodeRichText, escapeMarkup, renderRichText, richTextDocument, richTextPlainText, type RichTextBlock, type RichTextInline } from './rich-text';
 
 export interface EmailSignature {
 	id: string;
@@ -20,12 +21,75 @@ export interface SignatureContact {
 }
 
 export interface SignatureDetail extends EmailSignature {
+	instructionText: string;
+	downloadLinkText: string;
 	variations: SignatureVariation[];
 	contacts: SignatureContact[];
 }
 
 export const MAX_SIGNATURE_FIELDS = 50;
 export const MAX_CONTACT_VALUE_LENGTH = 2000;
+export const MAX_SIGNATURE_INSTRUCTIONS_LENGTH = 10000;
+export const MAX_SIGNATURE_DOWNLOAD_LINK_TEXT_LENGTH = 200;
+export const DEFAULT_SIGNATURE_DOWNLOAD_LINK_TEXT = 'Download your personalized signature.html';
+
+export function signatureInstructionEmail(instructions: string, label: string, url: string): { text: string; html: string } {
+	const document = richTextDocument(instructions);
+	let inserted = false;
+	function replaceTags(blocks: RichTextBlock[]) {
+		for (const block of blocks) {
+			if (block.type === 'orderedList') {
+				for (const item of block.content) replaceTags(item.content);
+				continue;
+			}
+			const content = block.content ?? [];
+			const text = content.map((node) => node.type === 'text' ? node.text : '\n').join('');
+			const matches = [...text.matchAll(/{{\s*download_link\s*}}/g)];
+			if (!matches.length) continue;
+			function range(start: number, end: number): RichTextInline[] {
+				const result: RichTextInline[] = [];
+				let offset = 0;
+				for (const node of content) {
+					const length = node.type === 'text' ? node.text.length : 1;
+					const from = Math.max(0, start - offset);
+					const to = Math.min(length, end - offset);
+					if (from < to) result.push(node.type === 'text' ? { ...node, text: node.text.slice(from, to) } : node);
+					offset += length;
+				}
+				return result;
+			}
+			const next: RichTextInline[] = [];
+			let offset = 0;
+			for (const match of matches) {
+				next.push(...range(offset, match.index));
+				const first = range(match.index, match.index + 1)[0];
+				next.push({
+					type: 'text', text: label,
+					marks: [...(first?.type === 'text' ? first.marks ?? [] : []).filter((mark) => mark.type !== 'link'), { type: 'link', attrs: { href: url } }]
+				});
+				offset = match.index + match[0].length;
+			}
+			next.push(...range(offset, text.length));
+			block.content = next;
+			inserted = true;
+		}
+	}
+	replaceTags(document.content);
+	if (inserted) {
+		const value = encodeRichText(document);
+		return { text: richTextPlainText(value), html: renderRichText(value) };
+	}
+	return {
+		text: `${richTextPlainText(instructions)}\n\n${label}:\n${url}`,
+		html: `${renderRichText(instructions)}<p><a href="${escapeMarkup(url)}">${escapeMarkup(label)}</a></p>`
+	};
+}
+
+export interface SignatureEmailResult {
+	accepted: string[];
+	failed: string[];
+	message: string;
+}
 const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
 const MAX_CONDITION_DEPTH = 50;
 const BLOCKED_ELEMENTS = new Set(['script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'base', 'svg', 'math', 'link']);
@@ -91,7 +155,7 @@ export function signatureFields(html: string): string[] {
 }
 
 export function contactFields(variations: Pick<SignatureVariation, 'html'>[]): string[] {
-	return [...new Set(['name', ...variations.flatMap((variation) => signatureFields(variation.html))])].sort((a, b) => a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b));
+	return [...new Set(['name', 'email', ...variations.flatMap((variation) => signatureFields(variation.html))])].sort((a, b) => a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b));
 }
 
 function validateHtml(html: string, template = false) {

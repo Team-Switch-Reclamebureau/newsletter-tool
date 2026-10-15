@@ -2,10 +2,11 @@
 	import { untrack } from 'svelte';
 	import { jsonRequest, requestJson } from './api-client';
 	import { readSource } from './files';
-	import { contactFields, MAX_CONTACT_VALUE_LENGTH, renderSignature, signatureDownloadName, type SignatureContact, type SignatureDetail, type SignatureVariation } from './signatures';
+	import { contactFields, MAX_CONTACT_VALUE_LENGTH, MAX_SIGNATURE_INSTRUCTIONS_LENGTH, MAX_SIGNATURE_DOWNLOAD_LINK_TEXT_LENGTH, renderSignature, signatureDownloadName, type SignatureContact, type SignatureDetail, type SignatureEmailResult, type SignatureVariation } from './signatures';
 	import { useToasts } from './toast-context';
 	import WorkspaceTabs from './WorkspaceTabs.svelte';
 	import TabIcon from './TabIcon.svelte';
+	import RichTextEditor from './RichTextEditor.svelte';
 
 	let { initial, canDelete, onDirtyChange, onSaved, onDeleted }: {
 		initial: SignatureDetail;
@@ -23,6 +24,8 @@
 	] as const;
 	let signature = $state(untrack(() => initial));
 	let name = $state(untrack(() => initial.name));
+	let instructionText = $state(untrack(() => initial.instructionText));
+	let downloadLinkText = $state(untrack(() => initial.downloadLinkText));
 	let tab = $state<'variations' | 'contacts' | 'export' | 'settings'>('variations');
 	let busy = $state(false);
 	let variationId = $state<string | null>(null);
@@ -37,16 +40,18 @@
 	let previewVariationId = $state('');
 	let previewContactId = $state('');
 	let selectedContacts = $state<string[]>(untrack(() => initial.contacts.map((contact) => contact.id)));
-	let allVariations = $state(false);
+	let exportVariationId = $state('');
+	let deliveryResult = $state<SignatureEmailResult | null>(null);
 	let deleteConfirmation = $state('');
 	let uploadStatus = $state('');
 	const fields = $derived([...new Set([...contactFields(signature.variations), ...Object.keys(contactDraft)])]);
 	const contactDirty = $derived(contactEditing && contactState(contactDraft) !== contactSnapshot);
 	const variationDirty = $derived(Boolean(variationId) && JSON.stringify([variationName, variationFilename, variationHtml]) !== variationSnapshot);
-	const dirty = $derived(name !== signature.name || contactDirty || variationDirty);
+	const dirty = $derived(name !== signature.name || instructionText !== signature.instructionText || downloadLinkText !== signature.downloadLinkText || contactDirty || variationDirty);
 	const previewVariation = $derived(signature.variations.find((variation) => variation.id === previewVariationId) ?? signature.variations[0]);
 	const previewContact = $derived(signature.contacts.find((contact) => contact.id === previewContactId) ?? signature.contacts[0]);
-	const exportVariations = $derived(allVariations ? signature.variations : previewVariation ? [previewVariation] : []);
+	const exportVariation = $derived(signature.variations.find((variation) => variation.id === exportVariationId) ?? signature.variations[0]);
+	const exportVariations = $derived(exportVariation ? [exportVariation] : []);
 	const exportContacts = $derived(signature.contacts.filter((contact) => selectedContacts.includes(contact.id)));
 	const preview = $derived(previewVariation && previewContact ? rendered(previewVariation, previewContact) : null);
 	const previewDocument = $derived(preview?.html ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">${preview.html}` : '');
@@ -201,6 +206,36 @@
 		finally { busy = false; }
 	}
 
+	async function saveInstructions(event: SubmitEvent) {
+		event.preventDefault();
+		if (busy) return;
+		busy = true;
+		try {
+			await persist(base, 'PATCH', { instructionText, downloadLinkText });
+			instructionText = signature.instructionText;
+			downloadLinkText = signature.downloadLinkText;
+			await notifySaved('Instruction email settings saved.');
+		} catch (cause) { toasts.error(message(cause)); }
+		finally { busy = false; }
+	}
+
+	async function sendSignatures() {
+		if (busy || dirty || !exportVariation || !exportContacts.length) return;
+		if (!window.confirm(`Email "${exportVariation.name}" with the saved instructions to ${exportContacts.length} selected contacts? Each contact receives only their own download link.`)) return;
+		busy = true;
+		deliveryResult = null;
+		try {
+			const result = await requestJson<SignatureEmailResult>(`${base}/send`, jsonRequest('POST', {
+				revision: signature.revision, variationId: exportVariation.id, contactIds: exportContacts.map((contact) => contact.id)
+			}));
+			deliveryResult = result;
+			selectedContacts = selectedContacts.filter((id) => !result.accepted.includes(id));
+			if (result.failed.length) toasts.error(result.message);
+			else toasts.success(result.message);
+		} catch (cause) { toasts.error(message(cause)); }
+		finally { busy = false; }
+	}
+
 	async function deleteSignature(event: SubmitEvent) {
 		event.preventDefault();
 		if (!canDelete) { toasts.error('Only administrators can delete signatures.'); return; }
@@ -209,6 +244,8 @@
 		try {
 			await requestJson(base, jsonRequest('DELETE', { revision: signature.revision, confirmName: deleteConfirmation }));
 			name = signature.name;
+			instructionText = signature.instructionText;
+			downloadLinkText = signature.downloadLinkText;
 			contactEditing = false;
 			variationId = null;
 			busy = false;
@@ -261,25 +298,25 @@
 	{:else if tab === 'contacts'}
 		<section class="panel library">
 			<div class="section-heading"><h2>Contacts ({signature.contacts.length})</h2><button class="primary" onclick={() => editContact()}>+ New contact</button></div>
-			<p>These contacts belong only to this signature and apply to every variation. Fields are generated from all uploaded placeholders. Name is always required; other fields can be left blank.</p>
+			<p>These contacts belong only to this signature and apply to every variation. Name and email are always required, even when the HTML does not use them. Email is stored for sending signature downloads and instructions later. Other fields are generated from all uploaded placeholders and can be left blank.</p>
 			<ul class="entry-list">
 				{#each signature.contacts as contact (contact.id)}
-					<li><div><strong>{contact.fields.name}</strong><small>{contact.fields.phone ?? contact.fields.email ?? ''}</small></div><div class="actions"><button class="secondary" onclick={() => editContact(contact)}>Edit contact</button><button class="destructive" onclick={() => remove('contacts', contact.id, `contact "${contact.fields.name}"`)}>Delete contact</button></div></li>
+					<li><div><strong>{contact.fields.name}</strong><small>{contact.fields.email || 'Email missing - edit this contact to add it.'}</small>{#if contact.fields.phone}<small>{contact.fields.phone}</small>{/if}</div><div class="actions"><button class="secondary" onclick={() => editContact(contact)}>Edit contact</button><button class="destructive" onclick={() => remove('contacts', contact.id, `contact "${contact.fields.name}"`)}>Delete contact</button></div></li>
 				{/each}
 			</ul>
 			{#if !signature.contacts.length}<p>No contacts yet. Add a contact to personalize your signature variations.</p>{/if}
 			{#if contactEditing}
 				<form class="entry-form" onsubmit={saveContact}>
 					<h3>{contactId ? 'Edit contact' : 'New contact'}</h3>
-					<div class="contact-fields">{#each fields as field (field)}<div><label for={`contact-${field}`}>{field.replace(/[_-]/g, ' ')}</label><input id={`contact-${field}`} bind:value={contactDraft[field]} maxlength={field === 'name' ? 160 : MAX_CONTACT_VALUE_LENGTH} required={field === 'name'} /></div>{/each}</div>
-					<div class="actions"><button class="primary" disabled={!contactDraft.name?.trim() || (Boolean(contactId) && !contactDirty)}>Save contact</button><button class="secondary" type="button" onclick={cancelContact}>Cancel</button></div>
+					<div class="contact-fields">{#each fields as field (field)}<div><label for={`contact-${field}`}>{field.replace(/[_-]/g, ' ')}</label><input id={`contact-${field}`} type={field === 'email' ? 'email' : 'text'} bind:value={contactDraft[field]} maxlength={field === 'name' ? 160 : field === 'email' ? 254 : MAX_CONTACT_VALUE_LENGTH} required={field === 'name' || field === 'email'} /></div>{/each}</div>
+					<div class="actions"><button class="primary" disabled={!contactDraft.name?.trim() || !contactDraft.email?.trim() || (Boolean(contactId) && !contactDirty)}>Save contact</button><button class="secondary" type="button" onclick={cancelContact}>Cancel</button></div>
 				</form>
 			{/if}
 		</section>
 	{:else if tab === 'export'}
 		<section class="panel library">
 			<h2>Preview &amp; export</h2>
-			<p>Previews and downloads use saved variations and saved contact information. Select one or more contacts to generate a separate HTML file for each contact and variation.</p>
+			<p>Previews, downloads, and emails use saved variations and saved contact information. Select a variation and one or more contacts to download or email their personalized signatures.</p>
 			{#if !signature.variations.length || !signature.contacts.length}<p>Upload at least one HTML variation and add a contact first.</p>
 			{:else}
 				<div class="selectors">
@@ -289,10 +326,20 @@
 				{#if preview?.error}<p class="error" role="alert">{preview.error}</p>
 				{:else if previewDocument}<iframe title="Personalized email signature preview" sandbox="" referrerpolicy="no-referrer" srcdoc={previewDocument}></iframe><button class="secondary" onclick={copyHtml}>Copy HTML</button>{/if}
 				<h3>Download personalized signatures</h3>
-				<label class="checkbox"><input type="checkbox" bind:checked={allVariations} /> Export all variations</label>
+				<label for="export-variation">Variation to download or email</label><select id="export-variation" value={exportVariation?.id} onchange={(event) => exportVariationId = event.currentTarget.value}>{#each signature.variations as variation (variation.id)}<option value={variation.id}>{variation.name}</option>{/each}</select>
 				<div class="actions"><button class="secondary" onclick={() => selectedContacts = signature.contacts.map((contact) => contact.id)}>Select all contacts</button><button class="secondary" onclick={() => selectedContacts = []}>Clear selection</button></div>
-				<div class="contact-selection">{#each signature.contacts as contact (contact.id)}<label class="checkbox"><input type="checkbox" bind:group={selectedContacts} value={contact.id} /> {contact.fields.name}</label>{/each}</div>
+				<div class="contact-selection">{#each signature.contacts as contact (contact.id)}<label class="checkbox"><input type="checkbox" bind:group={selectedContacts} value={contact.id} /> {contact.fields.name} ({contact.fields.email || 'Email missing'})</label>{/each}</div>
 				{#if !exportContacts.length}<p>Select at least one contact.</p>{/if}
+				<p>Each contact receives a separate email with your saved instructions and a private link that opens their personalized signature.html in the browser instead of forcing a download. Links do not require sign-in or expire; deleting this signature removes its links. Later edits do not change previously emailed signatures.</p>
+				{#if !signature.instructionText}<p>Save instruction email text in <button class="secondary" onclick={() => tab = 'settings'}>Signature settings</button> before sending.</p>{/if}
+				{#if dirty}<p>Save your changes before sending signature emails.</p>{/if}
+				<button class="primary" disabled={dirty || !signature.instructionText || !exportContacts.length || !exportVariation} onclick={sendSignatures}>Send instructions &amp; download links ({exportContacts.length})</button>
+				{#if deliveryResult}
+					<p role="status">{deliveryResult.message}</p>
+					<ul>{#each signature.contacts.filter((contact) => deliveryResult?.accepted.includes(contact.id) || deliveryResult?.failed.includes(contact.id)) as contact (contact.id)}
+						<li class:error={deliveryResult.failed.includes(contact.id)}>{contact.fields.name} ({contact.fields.email}): {deliveryResult.accepted.includes(contact.id) ? 'Accepted by SMTP' : 'Delivery not confirmed - check SMTP logs before retrying'}</li>
+					{/each}</ul>
+				{/if}
 				<ul class="entry-list">
 					{#each exportContacts as contact (contact.id)}
 						{#each exportVariations as variation (variation.id)}
@@ -308,6 +355,15 @@
 			<h2>Signature settings</h2>
 			<p>All signed-in users can view and edit this signature, its variations, and its contacts. Deleting a user account does not delete workspace content.</p>
 			<form onsubmit={saveName}><label for="edit-signature-name">Signature name</label><input id="edit-signature-name" bind:value={name} maxlength="160" required /><button class="primary" disabled={name === signature.name || !name.trim()}>Save signature name</button></form>
+			<form class="entry-form" onsubmit={saveInstructions}>
+				<h3>Instruction email</h3>
+				<p>Define the instructions sent to each selected contact. Use bold, italics, and ordered lists to explain the steps. Insert <code>{'{{download_link}}'}</code> where you want the personalized download link, including inside a list. Without this tag, the link is added below the instructions.</p>
+				<label for="signature-instructions">Instruction email text</label><RichTextEditor id="signature-instructions" label="Instruction email text" value={instructionText} orderedLists disabled={busy} onUpdate={(value) => instructionText = value} />
+				{#if instructionText.length > MAX_SIGNATURE_INSTRUCTIONS_LENGTH}<p class="error" role="alert">Instructions are too long. Use at most {MAX_SIGNATURE_INSTRUCTIONS_LENGTH} characters including formatting data.</p>{/if}
+				<label for="signature-download-link-text">Download link text</label><input id="signature-download-link-text" bind:value={downloadLinkText} maxlength={MAX_SIGNATURE_DOWNLOAD_LINK_TEXT_LENGTH} required />
+				<p>This text replaces <code>{'{{download_link}}'}</code> with a clickable personalized link that opens signature.html in the browser. The URL is generated automatically.</p>
+				<button class="primary" disabled={(instructionText === signature.instructionText && downloadLinkText === signature.downloadLinkText) || instructionText.length > MAX_SIGNATURE_INSTRUCTIONS_LENGTH || !downloadLinkText.trim()}>Save instruction email settings</button>
+			</form>
 			{#if canDelete}<form class="danger-zone" onsubmit={deleteSignature}>
 				<h3>Delete signature</h3><p>This permanently deletes this signature, every uploaded variation, and all its contacts. Newsletters and other signatures are kept.</p>
 				<label for="delete-signature-confirmation">Type <strong>{signature.name}</strong> to confirm</label><input id="delete-signature-confirmation" bind:value={deleteConfirmation} autocomplete="off" required />

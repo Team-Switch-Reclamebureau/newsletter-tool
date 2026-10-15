@@ -144,10 +144,10 @@ describe('email signatures', () => {
 	it('shares signatures across all users while keeping contacts and variations scoped to their signature', async () => {
 		let first = await create('First');
 		first = await variation(first, 'One', '<p>{{name}}</p>');
-		first = await contact(first, { name: 'First contact' });
+		first = await contact(first, { name: 'First contact', email: 'first@example.test' });
 		let second = await create('Second');
 		second = await variation(second, 'Two', '<p>{{name}}</p>');
-		second = await contact(second, { name: 'Second contact' });
+		second = await contact(second, { name: 'Second contact', email: 'second@example.test' });
 		const outsider = await create('Another user signature', outsiderCookie);
 		const listed = (await (await request('/api/signatures')).json()).signatures;
 		expect(listed.some((entry: SignatureDetail) => entry.id === outsider.id)).toBe(true);
@@ -156,9 +156,9 @@ describe('email signatures', () => {
 		expect((await request(`/signatures?signature=${first.id}`, 'GET', undefined, outsiderCookie)).status).toBe(200);
 		expect((await request(renderPath(first, first.variations[0].id, second.contacts[0].id))).status).toBe(404);
 		expect((await request(renderPath(first, second.variations[0].id))).status).toBe(404);
-		expect((await request(`/api/signatures/${first.id}/contacts/${second.contacts[0].id}`, 'PATCH', { fields: { name: 'Wrong signature' }, revision: first.revision })).status).toBe(404);
+		expect((await request(`/api/signatures/${first.id}/contacts/${second.contacts[0].id}`, 'PATCH', { fields: { name: 'Wrong signature', email: 'wrong@example.test' }, revision: first.revision })).status).toBe(404);
 		expect((await request(`/api/signatures/${first.id}/variations/${second.variations[0].id}`, 'DELETE', { revision: first.revision })).status).toBe(404);
-		expect((await request(`/api/signatures/${first.id}/contacts`, 'POST', { fields: { name: 'Added by another user' }, revision: first.revision }, outsiderCookie)).status).toBe(201);
+		expect((await request(`/api/signatures/${first.id}/contacts`, 'POST', { fields: { name: 'Added by another user', email: 'another@example.test' }, revision: first.revision }, outsiderCookie)).status).toBe(201);
 		expect((await request(`/api/signatures/${first.id}`, 'DELETE', { confirmName: first.name, revision: first.revision }, outsiderCookie)).status).toBe(403);
 		expect((await request(`/api/signatures/${first.id}/render?variationId=invalid&contactId=${first.contacts[0].id}`)).status).toBe(400);
 		expect((await request(`/api/signatures/${randomUUID()}`)).status).toBe(404);
@@ -184,16 +184,50 @@ describe('email signatures', () => {
 		const replace = await request(`/api/signatures/${signature.id}/variations/${signature.variations[0].id}`, 'PATCH', { name: 'Updated', filename: 'replacement.html', html: '<p>{{name}} {{phone}}</p>', revision: signature.revision });
 		expect(replace.status).toBe(200);
 		signature = (await replace.json()).signature;
-		signature = await contact(signature, { name: 'Jane' });
+		signature = await contact(signature, { name: 'Jane', email: 'jane@example.test' });
 		expect((await request(renderPath(signature))).status).toBe(400);
+	});
+
+	it('requires and persists email without an email placeholder and preserves saved contacts on invalid updates', async () => {
+		let signature = await create('Contact emails');
+		signature = await variation(signature, 'Name only', '<p>{{name}}</p>');
+		for (const email of [undefined, '', 'invalid', 'jane@example']) {
+			const response = await request(`/api/signatures/${signature.id}/contacts`, 'POST', { revision: signature.revision, fields: { name: 'Jane', email } });
+			expect(response.status).toBe(400);
+			expect((await response.json()).message).toBe('Enter a valid contact email address.');
+		}
+		signature = await contact(signature, { name: 'Jane', email: ' jane@example.test ' });
+		expect(signature.revision).toBe(3);
+		expect(signature.contacts[0].fields).toEqual({ name: 'Jane', email: 'jane@example.test' });
+		for (const email of [undefined, '', 'invalid']) {
+			expect((await request(`/api/signatures/${signature.id}/contacts/${signature.contacts[0].id}`, 'PATCH', { revision: signature.revision, fields: { name: 'Changed', email } })).status).toBe(400);
+		}
+		const saved = (await (await request(`/api/signatures/${signature.id}`)).json()).signature;
+		expect(saved).toEqual(signature);
+		expect(await (await request(renderPath(signature))).text()).toBe('<p>Jane</p>');
+		const update = await request(`/api/signatures/${signature.id}/contacts/${signature.contacts[0].id}`, 'PATCH', { revision: signature.revision, fields: { name: 'Jane', email: 'new@example.test' } });
+		expect(update.status).toBe(200);
+		expect((await update.json()).signature.contacts[0].fields.email).toBe('new@example.test');
+	});
+
+	it('preserves legacy contacts without email for downloads and requires email when editing them', async () => {
+		let signature = await create('Legacy contact emails');
+		signature = await variation(signature, 'Name only', '<p>{{name}}</p>');
+		const id = randomUUID();
+		await fixture.pool.query('INSERT INTO signature_contacts(id, signature_id, fields) VALUES ($1, $2, $3)', [id, signature.id, { name: 'Legacy contact' }]);
+		expect(await (await request(renderPath(signature, signature.variations[0].id, id))).text()).toBe('<p>Legacy contact</p>');
+		expect((await request(`/api/signatures/${signature.id}/contacts/${id}`, 'PATCH', { revision: signature.revision, fields: { name: 'Legacy contact' } })).status).toBe(400);
+		const update = await request(`/api/signatures/${signature.id}/contacts/${id}`, 'PATCH', { revision: signature.revision, fields: { name: 'Legacy contact', email: 'legacy@example.test' } });
+		expect(update.status).toBe(200);
+		expect((await update.json()).signature.contacts[0].fields.email).toBe('legacy@example.test');
 	});
 
 	it('does not export active URLs from contact fields and escapes HTML values', async () => {
 		let signature = await create('Escaping');
 		signature = await variation(signature, 'Link', '<p>{{name}}</p><a href="{{website}}">Website</a>');
-		signature = await contact(signature, { name: '<img src=x onerror=alert(1)>', website: 'javascript:alert(1)' });
+		signature = await contact(signature, { name: '<img src=x onerror=alert(1)>', email: 'jane@example.test', website: 'javascript:alert(1)' });
 		expect((await request(renderPath(signature))).status).toBe(400);
-		const update = await request(`/api/signatures/${signature.id}/contacts/${signature.contacts[0].id}`, 'PATCH', { revision: signature.revision, fields: { name: '<img src=x onerror=alert(1)>', website: 'https://example.test/?a=1&b=2' } });
+		const update = await request(`/api/signatures/${signature.id}/contacts/${signature.contacts[0].id}`, 'PATCH', { revision: signature.revision, fields: { name: '<img src=x onerror=alert(1)>', email: 'jane@example.test', website: 'https://example.test/?a=1&b=2' } });
 		expect(update.status).toBe(200);
 		signature = (await update.json()).signature;
 		const html = await (await request(renderPath(signature))).text();
@@ -205,9 +239,10 @@ describe('email signatures', () => {
 		let signature = await create('Conditional signatures');
 		signature = await variation(signature, 'Detailed', '<p>{{name}}</p>{{#if phone}}<a href="tel:{{phone}}">{{phone}}</a>{{else if email}}<a href="mailto:{{email}}">{{email}}</a>{{else}}<span>Contact our office</span>{{/if}}');
 		signature = await variation(signature, 'Compact', '{{#if phone}}{{#if name}}{{name}}: {{/if}}{{phone}}{{else}}No phone{{/if}}');
-		signature = await contact(signature, { name: 'Phone <person>', phone: '+31 123' });
+		signature = await contact(signature, { name: 'Phone <person>', phone: '+31 123', email: 'phone@example.test' });
 		signature = await contact(signature, { name: 'Email person', email: 'email@example.test' });
-		signature = await contact(signature, { name: 'Office person', phone: '', email: '' });
+		await fixture.pool.query('INSERT INTO signature_contacts(id, signature_id, fields) VALUES ($1, $2, $3)', [randomUUID(), signature.id, { name: 'Office person', phone: '', email: '' }]);
+		signature = (await (await request(`/api/signatures/${signature.id}`)).json()).signature;
 		const detailed = signature.variations.find((entry) => entry.name === 'Detailed')!;
 		const compact = signature.variations.find((entry) => entry.name === 'Compact')!;
 		const phoneContact = signature.contacts.find((entry) => entry.fields.name === 'Phone <person>')!;
@@ -229,8 +264,8 @@ describe('email signatures', () => {
 	it('serializes simultaneous saves so only one writer with a shared revision succeeds', async () => {
 		const signature = await create('Concurrent signature');
 		const responses = await Promise.all([
-			request(`/api/signatures/${signature.id}/contacts`, 'POST', { revision: signature.revision, fields: { name: 'First writer' } }),
-			request(`/api/signatures/${signature.id}/contacts`, 'POST', { revision: signature.revision, fields: { name: 'Second writer' } })
+			request(`/api/signatures/${signature.id}/contacts`, 'POST', { revision: signature.revision, fields: { name: 'First writer', email: 'first@example.test' } }),
+			request(`/api/signatures/${signature.id}/contacts`, 'POST', { revision: signature.revision, fields: { name: 'Second writer', email: 'second@example.test' } })
 		]);
 		expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
 		const saved = (await (await request(`/api/signatures/${signature.id}`)).json()).signature;
@@ -242,8 +277,8 @@ describe('email signatures', () => {
 		let signature = await create('Delete this signature', outsiderCookie);
 		signature = await variation(signature, 'One', '<p>{{name}}</p>');
 		signature = await variation(signature, 'Two', '<p>{{name}}</p>');
-		signature = await contact(signature, { name: 'Jane' });
-		signature = await contact(signature, { name: 'Alex' });
+		signature = await contact(signature, { name: 'Jane', email: 'jane@example.test' });
+		signature = await contact(signature, { name: 'Alex', email: 'alex@example.test' });
 		const keep = await create('Keep this signature');
 		const projectResponse = await request('/api/projects', 'POST', { name: 'Unaffected newsletter' });
 		expect(projectResponse.status).toBe(201);
@@ -276,7 +311,7 @@ describe('email signatures', () => {
 	it('preserves signatures, variations, and contacts when their creator account is deleted', async () => {
 		let signature = await create('Deleted account signature', outsiderCookie);
 		signature = await variation(signature, 'Private', '<p>{{name}}</p>', outsiderCookie);
-		signature = await contact(signature, { name: 'Private contact' }, outsiderCookie);
+		signature = await contact(signature, { name: 'Private contact', email: 'private@example.test' }, outsiderCookie);
 		const user = (await fixture.pool.query<{ id: string }>('SELECT id FROM "user" WHERE email = $1', ['outsider@example.test'])).rows[0];
 		expect((await request(`/api/admin/users/${user.id}`, 'DELETE', {})).status).toBe(200);
 		expect((await fixture.pool.query('SELECT created_by FROM email_signatures WHERE id = $1', [signature.id])).rows).toEqual([{ created_by: null }]);

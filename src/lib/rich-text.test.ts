@@ -1,8 +1,63 @@
 import { describe, expect, it } from 'vitest';
-import { encodeRichText, renderRichText, richTextDocument, RICH_TEXT_PREFIX, validRichTextLink } from './rich-text';
+import { encodeRichText, renderRichText, richTextDocument, richTextPlainText, RICH_TEXT_PREFIX, validRichTextLink } from './rich-text';
 import { fieldError } from './template-fields';
 
 describe('formatted textarea storage and rendering', () => {
+	it('renders bold and italic ordered-list items as safe HTML and numbered plain text', () => {
+		const value = encodeRichText({ type: 'doc', content: [
+			{ type: 'paragraph', content: [{ type: 'text', text: 'Instructions', marks: [{ type: 'bold' }] }] },
+			{ type: 'orderedList', attrs: { start: 1, type: null }, content: [
+				{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Download <signature.html>', marks: [{ type: 'bold' }] }] }] },
+				{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Open your settings', marks: [{ type: 'italic' }] }] }] }
+			] }
+		] });
+		expect(renderRichText(value)).toBe('<strong>Instructions</strong><br /><ol><li><strong>Download &lt;signature.html&gt;</strong></li><li><em>Open your settings</em></li></ol>');
+		expect(richTextPlainText(value)).toBe('Instructions\n1. Download <signature.html>\n2. Open your settings');
+		expect(richTextPlainText('Legacy <text>\r\nNext line')).toBe('Legacy <text>\nNext line');
+	});
+
+	it('supports nested ordered lists and safe starting numbers', () => {
+		const paragraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+		const value = encodeRichText({ type: 'doc', content: [
+			{ type: 'orderedList', attrs: { start: 3, type: 'a' }, content: [
+				{ type: 'listItem', content: [paragraph('Install'), { type: 'orderedList', content: [
+					{ type: 'listItem', content: [paragraph('Open settings')] }
+				] }] },
+				{ type: 'listItem', content: [paragraph('Save')] }
+			] }
+		] });
+		expect(renderRichText(value)).toBe('<ol start="3" type="a"><li>Install<br /><ol><li>Open settings</li></ol></li><li>Save</li></ol>');
+		expect(richTextPlainText(value)).toBe('3. Install\n   1. Open settings\n4. Save');
+	});
+
+	it('preserves safe links in the plain-text alternative', () => {
+		const value = encodeRichText({ type: 'doc', content: [{ type: 'paragraph', content: [
+			{ type: 'text', text: 'Help', marks: [{ type: 'link', attrs: { href: 'https://example.test/help' } }] },
+			{ type: 'hardBreak' },
+			{ type: 'text', text: 'https://example.test', marks: [{ type: 'link', attrs: { href: 'https://example.test' } }] }
+		] }] });
+		expect(richTextPlainText(value)).toBe('Help (https://example.test/help)\nhttps://example.test');
+	});
+
+	it('rejects malformed list structures, unsafe attributes, invalid numbering, and excessive nesting', () => {
+		const item = { type: 'listItem', content: [{ type: 'paragraph' }] };
+		for (const list of [
+			{ type: 'orderedList', content: [] },
+			{ type: 'orderedList', content: [{ type: 'paragraph' }] },
+			{ type: 'orderedList', content: [{ type: 'listItem', content: [] }] },
+			{ type: 'orderedList', content: [{ ...item, attrs: { onclick: 'alert(1)' } }] },
+			...[0, -1, 1.5, '1', 2147483648].map((start) => ({ type: 'orderedList', attrs: { start }, content: [item] })),
+			{ type: 'orderedList', attrs: { type: '" onclick="alert(1)' }, content: [item] },
+			{ type: 'orderedList', attrs: { type: 1 }, content: [item] },
+			{ type: 'orderedList', attrs: { style: 'color:red' }, content: [item] }
+		]) {
+			expect(() => encodeRichText({ type: 'doc', content: [list] })).toThrow('Invalid formatted text');
+		}
+		let nested: unknown = { type: 'paragraph' };
+		for (let depth = 0; depth < 22; depth++) nested = { type: 'orderedList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }, nested] }] };
+		expect(() => encodeRichText({ type: 'doc', content: [nested] })).toThrow('Invalid formatted text');
+	});
+
 	it('preserves legacy text, literal markup, spaces, and all line breaks', () => {
 		for (const value of ['', '  Plain <strong>text</strong> & "quotes"  ', 'First\nSecond\n\n']) {
 			const document = richTextDocument(value);

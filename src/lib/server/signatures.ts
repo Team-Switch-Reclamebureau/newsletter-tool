@@ -1,7 +1,9 @@
 import { error } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import { contactFields, MAX_CONTACT_VALUE_LENGTH, MAX_SIGNATURE_FIELDS, renderSignature, validateSignatureTemplate, type EmailSignature, type SignatureContact, type SignatureDetail, type SignatureVariation } from '../signatures';
+import { validEmail } from '../email-settings';
+import { richTextPlainText } from '../rich-text';
+import { contactFields, MAX_CONTACT_VALUE_LENGTH, MAX_SIGNATURE_FIELDS, MAX_SIGNATURE_INSTRUCTIONS_LENGTH, MAX_SIGNATURE_DOWNLOAD_LINK_TEXT_LENGTH, renderSignature, validateSignatureTemplate, type EmailSignature, type SignatureContact, type SignatureDetail, type SignatureVariation } from '../signatures';
 import { object, revision } from './http';
 import { transaction } from './workspace';
 
@@ -9,6 +11,18 @@ type Database = Pool | PoolClient;
 
 export function signatureName(value: unknown): string {
 	if (typeof value !== 'string' || !value.trim() || value.trim().length > 160 || value.includes('\0')) error(400, 'Names must contain 1-160 characters without null characters.');
+	return value.trim();
+}
+
+export function signatureInstructions(value: unknown): string {
+	if (typeof value !== 'string' || value.length > MAX_SIGNATURE_INSTRUCTIONS_LENGTH || value.includes('\0')) error(400, `Instructions must be text of at most ${MAX_SIGNATURE_INSTRUCTIONS_LENGTH} characters without null characters.`);
+	try { if (!richTextPlainText(value).trim()) return ''; }
+	catch (cause) { error(400, cause instanceof Error ? cause.message : 'Invalid formatted instructions.'); }
+	return value.trim();
+}
+
+export function signatureDownloadLinkText(value: unknown): string {
+	if (typeof value !== 'string' || !value.trim() || value.trim().length > MAX_SIGNATURE_DOWNLOAD_LINK_TEXT_LENGTH || /[\u0000-\u001f\u007f]/.test(value)) error(400, `Download link text must contain 1-${MAX_SIGNATURE_DOWNLOAD_LINK_TEXT_LENGTH} characters without control characters.`);
 	return value.trim();
 }
 
@@ -24,11 +38,12 @@ export async function requireSignature(database: Database, id: string, userId: s
 }
 
 export async function signatureDetail(database: Database, signature: EmailSignature): Promise<SignatureDetail> {
-	const [variations, contacts] = await Promise.all([
+	const [variations, contacts, settings] = await Promise.all([
 		database.query<SignatureVariation>('SELECT id, name, filename, html FROM signature_variations WHERE signature_id = $1 ORDER BY lower(name), id', [signature.id]),
-		database.query<SignatureContact>("SELECT id, fields FROM signature_contacts WHERE signature_id = $1 ORDER BY lower(fields->>'name'), id", [signature.id])
+		database.query<SignatureContact>("SELECT id, fields FROM signature_contacts WHERE signature_id = $1 ORDER BY lower(fields->>'name'), id", [signature.id]),
+		database.query<Pick<SignatureDetail, 'instructionText' | 'downloadLinkText'>>('SELECT instruction_text AS "instructionText", download_link_text AS "downloadLinkText" FROM email_signatures WHERE id = $1', [signature.id])
 	]);
-	return { ...signature, variations: variations.rows, contacts: contacts.rows };
+	return { ...signature, ...settings.rows[0], variations: variations.rows, contacts: contacts.rows };
 }
 
 export async function mutateSignature(pool: Pool, id: string, userId: string, savedRevision: unknown, mutate: (client: PoolClient, signature: EmailSignature) => Promise<void>): Promise<SignatureDetail> {
@@ -76,6 +91,7 @@ export function contactInput(body: Record<string, unknown>): Record<string, stri
 		fields[key] = value.trim();
 	}
 	fields.name = signatureName(input.name);
+	if (!validEmail(fields.email)) error(400, 'Enter a valid contact email address.');
 	return fields;
 }
 

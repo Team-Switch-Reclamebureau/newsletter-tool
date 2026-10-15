@@ -1,15 +1,62 @@
 import { describe, expect, it } from 'vitest';
-import { contactFields, renderSignature, signatureDownloadName, signatureFields, validateSignatureTemplate } from './signatures';
+import { contactFields, renderSignature, signatureDownloadName, signatureFields, signatureInstructionEmail, validateSignatureTemplate } from './signatures';
+import { encodeRichText } from './rich-text';
 import { MAX_TEMPLATE_BYTES } from './remote';
+
+describe('instruction email download links', () => {
+	const url = 'https://example.test/signature-downloads/token/signature.html';
+
+	it('inserts the editable link label at the tag in HTML and plain text without appending another link', () => {
+		const result = signatureInstructionEmail('First {{download_link}} then install.', 'Get <signature> & install', url);
+		expect(result.html).toBe(`First <a href="${url}">Get &lt;signature&gt; &amp; install</a> then install.`);
+		expect(result.text).toBe(`First Get <signature> & install (${url}) then install.`);
+	});
+
+	it('supports whitespace, repeated tags, and label text containing a literal tag', () => {
+		const result = signatureInstructionEmail('{{ download_link }} / {{download_link}}', 'Get {{download_link}}', url);
+		expect(result.html).toBe(`<a href="${url}">Get {{download_link}}</a> / <a href="${url}">Get {{download_link}}</a>`);
+	});
+
+	it('preserves bold and italic formatting when a tag spans text nodes in an ordered list', () => {
+		const instructions = encodeRichText({ type: 'doc', content: [
+			{ type: 'orderedList', content: [
+				{ type: 'listItem', content: [{ type: 'paragraph', content: [
+					{ type: 'text', text: 'First ' },
+					{ type: 'text', text: '{{down', marks: [{ type: 'bold' }, { type: 'italic' }] },
+					{ type: 'text', text: 'load_link}}' },
+					{ type: 'hardBreak' },
+					{ type: 'text', text: 'Then install.' }
+				] }] }
+			] }
+		] });
+		const result = signatureInstructionEmail(instructions, 'Get signature', url);
+		expect(result.html).toBe(`<ol><li>First <a href="${url}"><em><strong>Get signature</strong></em></a><br />Then install.</li></ol>`);
+		expect(result.text).toBe(`1. First Get signature (${url})\n   Then install.`);
+	});
+
+	it('replaces any existing link on a tag instead of nesting links or keeping the wrong URL', () => {
+		const instructions = encodeRichText({ type: 'doc', content: [{ type: 'paragraph', content: [
+			{ type: 'text', text: '{{download_link}}', marks: [{ type: 'link', attrs: { href: 'https://old.example.test' } }] }
+		] }] });
+		expect(signatureInstructionEmail(instructions, 'Get signature', url).html).toBe(`<a href="${url}">Get signature</a>`);
+	});
+
+	it('keeps legacy instructions and appends the editable label when the tag is absent', () => {
+		const result = signatureInstructionEmail('Install <carefully>.', 'Download & install', url);
+		expect(result.text).toBe(`Install <carefully>.\n\nDownload & install:\n${url}`);
+		expect(result.html).toBe(`Install &lt;carefully&gt;.<p><a href="${url}">Download &amp; install</a></p>`);
+	});
+});
 
 describe('signature placeholders and contact fields', () => {
 	it('extracts unique fields with optional whitespace and preserves case', () => {
 		expect(signatureFields('<p>{{ name }} {{phone}} {{ name }} {{job_title}} {{Office}}</p>')).toEqual(['Office', 'job_title', 'name', 'phone']);
 	});
 
-	it('combines all variation fields and always includes a contact name', () => {
+	it('combines all variation fields and always includes a contact name and email', () => {
 		expect(contactFields([{ html: '<p>{{phone}}</p>' }, { html: '<a href="mailto:{{email}}">{{phone}}</a>' }])).toEqual(['name', 'email', 'phone']);
-		expect(contactFields([])).toEqual(['name']);
+		expect(contactFields([])).toEqual(['name', 'email']);
+		expect(contactFields([{ html: '<p>{{phone}}</p>' }])).toEqual(['name', 'email', 'phone']);
 	});
 
 	it.each(['{{{ name }}}', '{{ name', '{{#if name}}', '{{contact.name}}', '{{ name phone }}', '{{ __proto__ }}'])('rejects unsupported syntax: %s', (html) => {

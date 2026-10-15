@@ -40,7 +40,11 @@ Attribute placeholders must be quoted, for example
 active URL schemes, and placeholders in CSS are rejected.
 
 Manage people in the signature's **Contacts** tab. Contact fields are generated
-from the union of all variation placeholders, with **name** always required.
+from the union of all variation placeholders, with **name** and a valid **email**
+always required, even when neither appears in the HTML. Email is stored for
+sending signature downloads and instructions; saving a contact does not
+send email. Existing contacts without email remain available for preview and
+download, but must have an email added when next saved.
 Contacts belong only to that signature and are reused by all its variations;
 editing a contact updates every variation's personalized output. Other fields
 can be saved empty. Adding a variation with new fields does not silently fill
@@ -49,10 +53,34 @@ unless the missing fields occur only in an unselected conditional branch.
 Contact text is HTML-escaped, not treated as markup.
 
 Use **Preview & export** to preview a saved variation for a saved contact,
-copy the generated HTML, or select one or more contacts and download separate
-personalized `.html` files. **Export all variations** lists a download for every
-selected contact/variation pair. Previews run in a sandboxed iframe; downloads
-require sign-in and are not public newsletter permalinks. Use absolute public
+copy the generated HTML, or select a variation and any number of contacts under
+**Download personalized signatures**. Download individual personalized `.html`
+files or use **Send instructions & download links** to send one private email per
+selected contact. Define and save the **Instruction email text** in
+**Signature settings** first. Insert `{{download_link}}` anywhere in the instructions
+(including in an ordered-list item) to place that contact's personalized download
+link there. If the tag is absent, the link is appended automatically for compatibility
+with existing instructions. Edit **Download link text** in the same settings to customize the
+link label in both HTML and plain-text emails; the private URL and `signature.html`
+filename remain automatic. Its rich-text toolbar supports **bold**, *italics*, and ordered
+lists. Formatting is preserved in the HTML email, with a numbered plain-text
+alternative for email clients that do not display HTML. Existing plain-text
+instructions remain supported. Sending requires saved changes and configured SMTP in Admin
+settings. Results distinguish SMTP acceptance from unconfirmed deliveries;
+accepted contacts are deselected so only failed contacts remain selected for
+retry. Check SMTP logs before retrying an unconfirmed delivery to avoid duplicates.
+Sending is limited to five requests per minute per user and per signature.
+
+Emailed links work without sign-in and open the personalized `signature.html`
+page directly in the browser instead of forcing a file download. This also
+applies to previously emailed links. Recipients can view and copy their signature
+or use their browser's save option to keep the HTML file.
+They are unlisted bearer links: anyone with a link can download that snapshot.
+Links do not expire, and later edits to contacts, variations, or instructions do
+not change previously emailed signatures. Deleting individual contacts or
+variations keeps sent downloads; deleting the whole signature removes them.
+Previews run in a sandboxed iframe; the individual editor download buttons still
+require sign-in. Signature downloads are separate from newsletter permalinks. Use absolute public
 image URLs (or embedded raster images) for signatures used outside the application.
 
 All signed-in users can view and edit every signature. Saving uses revision

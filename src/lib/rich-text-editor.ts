@@ -7,12 +7,14 @@ import { Italic } from '@tiptap/extension-italic';
 import { Link } from '@tiptap/extension-link';
 import { HardBreak } from '@tiptap/extension-hard-break';
 import { UndoRedo } from '@tiptap/extensions';
+import { OrderedList, ListItem } from '@tiptap/extension-list';
 import { encodeRichText, richTextDocument, validRichTextLink } from './rich-text';
 
 interface RichTextEditorOptions {
 	id?: string;
 	label: string;
 	inline?: boolean;
+	orderedLists?: boolean;
 	onUpdate: (value: string) => void;
 	onFocusChange?: (focused: boolean) => void;
 }
@@ -30,6 +32,7 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 		.newsletter-rich-toolbar button:focus-visible, .newsletter-rich-content:focus-visible { outline: 2px solid #829e66; outline-offset: 2px; }
 		.newsletter-rich-content { box-sizing: border-box; width: 100%; min-width: 0; white-space: pre-wrap; line-height: inherit; outline: none; }
 		.newsletter-rich-content p { margin: 0; min-height: 1em; }
+		.newsletter-rich-content ol { margin: 8px 0; padding-left: 24px; list-style-type: decimal; }
 		.newsletter-rich-editor:not(.inline) .newsletter-rich-content { min-height: 85px; padding: 10px 11px; line-height: 1.7; }
 		.newsletter-rich-editor.inline { display: inline-block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
 		.newsletter-rich-editor.inline .newsletter-rich-toolbar { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 1001; border: 1px solid #d7dfcd; border-radius: 5px; box-shadow: 0 2px 8px #0003; white-space: nowrap; }
@@ -58,7 +61,7 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 	const buttons = new Map<string, HTMLButtonElement>();
 	const editor = new Editor({
 		element,
-		extensions: [Document, Paragraph, Text, Bold, Italic, HardBreak, UndoRedo, Link.extend({
+		extensions: [Document, Paragraph, Text, Bold, Italic, HardBreak, UndoRedo, ...(options.orderedLists ? [OrderedList, ListItem] : []), Link.extend({
 			addAttributes() { return { href: { default: null } }; }
 		}).configure({
 			autolink: false,
@@ -121,10 +124,11 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 		},
 		onTransaction: ({ editor: current }) => updateToolbar(current)
 	});
-	for (const action of ['bold', 'italic', 'link', 'undo', 'redo'] as const) {
+	for (const action of ['bold', 'italic', 'orderedList', 'link', 'undo', 'redo'] as const) {
+		if (action === 'orderedList' && !options.orderedLists) continue;
 		const button = document.createElement('button');
 		button.type = 'button';
-		const label = action[0].toUpperCase() + action.slice(1);
+		const label = action === 'orderedList' ? 'Ordered list' : action[0].toUpperCase() + action.slice(1);
 		button.textContent = action === 'bold' ? 'B' : action === 'italic' ? 'I' : label;
 		button.style.fontWeight = action === 'bold' ? 'bold' : '';
 		button.style.fontStyle = action === 'italic' ? 'italic' : '';
@@ -139,6 +143,7 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 			const chain = editor.chain().focus();
 			if (action === 'bold') chain.toggleBold().run();
 			else if (action === 'italic') chain.toggleItalic().run();
+			else if (action === 'orderedList') chain.toggleOrderedList().run();
 			else if (action === 'undo') chain.undo().run();
 			else chain.redo().run();
 		});
@@ -215,7 +220,7 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 	}
 	function updateToolbar(current: Editor = editor) {
 		for (const [action, button] of buttons) {
-			if (action === 'bold' || action === 'italic' || action === 'link') button.setAttribute('aria-pressed', String(current.isActive(action)));
+			if (action === 'bold' || action === 'italic' || action === 'orderedList' || action === 'link') button.setAttribute('aria-pressed', String(current.isActive(action)));
 			else button.disabled = action === 'undo' ? !current.can().undo() : !current.can().redo();
 		}
 		current.view.dom.classList.toggle('is-empty', current.isEmpty);
@@ -239,6 +244,9 @@ export function createRichTextEditor(element: HTMLElement, value: string, option
 	element.addEventListener('click', preventLinkNavigation);
 	updateToolbar();
 	return {
+		setEditable(editable: boolean) {
+			editor.setEditable(editable, false);
+		},
 		setValue(next: string) {
 			if (next === lastValue) return;
 			editor.commands.setContent(richTextDocument(next), { emitUpdate: false });

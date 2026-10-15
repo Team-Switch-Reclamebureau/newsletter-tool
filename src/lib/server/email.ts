@@ -76,6 +76,24 @@ export async function sendEmail(pool: Pool, secret: string, to: string, subject:
 	finally { sender.transport.close(); }
 }
 
+export async function sendPersonalizedEmails(pool: Pool, secret: string, messages: { id: string; to: string; subject: string; text: string; html?: string }[]) {
+	const sender = await emailTransport(pool, secret);
+	const accepted: string[] = [];
+	const failed: string[] = [];
+	try {
+		for (const message of messages) {
+			try {
+				await deliverEmail(sender, message.to, message.subject, message.text, message.html);
+				accepted.push(message.id);
+			} catch (cause) {
+				console.error('Signature email delivery failed:', message.id, cause instanceof Error ? cause.message : 'Unknown delivery error');
+				failed.push(message.id);
+			}
+		}
+		return { accepted, failed };
+	} finally { sender.transport.close(); }
+}
+
 export async function sendNewsletterTest(pool: Pool, secret: string, recipients: string[], subject: string, text: string, html: string) {
 	const sender = await emailTransport(pool, secret);
 	try {
